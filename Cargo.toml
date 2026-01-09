@@ -1,0 +1,49 @@
+[package]
+name = "tgcp"
+version = "0.1.0"
+edition = "2021"
+description = "Terminal UI for GCP - navigate, observe, and manage Google Cloud Platform resources"
+license = "MIT"
+repository = "https://github.com/mnicolet/tgcp"
+readme = "README.md"
+keywords = ["gcp", "google-cloud", "tui", "terminal", "cloud", "infrastructure"]
+categories = ["command-line-utilities", "development-tools"]
+authors = ["mnicolet"]
+
+[dependencies]
+# TUI
+ratatui = "0.30"
+crossterm = "0.29"
+
+# GCP Authentication
+gcp_auth = "0.12"
+
+# HTTP client (using rustls to avoid OpenSSL cross-compilation issues)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+url = "2.5"
+urlencoding = "2.1"
+
+# Async runtime
+tokio = { version = "1.43", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI argument parsing
+clap = { version = "4.5", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# Utils
+anyhow = "1.0"
+thiserror = "1.0"
+dirs = "6.0"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+open = "5.3"
+
+[dev-dependencies]
+dirs = "6.0"

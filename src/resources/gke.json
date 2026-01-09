@@ -1,0 +1,54 @@
+{
+  "resources": {
+    "gke-clusters": {
+      "display_name": "GKE Clusters",
+      "service": "container",
+      "sdk_method": "list_clusters",
+      "sdk_method_params": {},
+      "response_path": "clusters",
+      "id_field": "name",
+      "name_field": "name",
+      "is_global": false,
+      "is_regional": true,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 25 },
+        { "header": "STATUS", "json_path": "status", "width": 15, "color_map": "gke_status" },
+        { "header": "LOCATION", "json_path": "location", "width": 18 },
+        { "header": "VERSION", "json_path": "currentMasterVersion", "width": 15 },
+        { "header": "NODES", "json_path": "currentNodeCount", "width": 8 },
+        { "header": "MODE", "json_path": "autopilot_display", "width": 12 }
+      ],
+      "sub_resources": [
+        {
+          "resource_key": "gke-nodepools",
+          "display_name": "Node Pools",
+          "shortcut": "n",
+          "parent_id_field": "name",
+          "filter_param": "cluster"
+        }
+      ],
+      "actions": []
+    },
+    "gke-nodepools": {
+      "display_name": "Node Pools",
+      "service": "container",
+      "sdk_method": "list_nodepools",
+      "sdk_method_params": {},
+      "response_path": "nodePools",
+      "id_field": "name",
+      "name_field": "name",
+      "is_global": false,
+      "is_regional": true,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 25 },
+        { "header": "STATUS", "json_path": "status", "width": 15, "color_map": "gke_status" },
+        { "header": "VERSION", "json_path": "version", "width": 15 },
+        { "header": "MACHINE TYPE", "json_path": "config.machineType", "width": 18 },
+        { "header": "NODES", "json_path": "initialNodeCount", "width": 8 },
+        { "header": "AUTOSCALING", "json_path": "autoscaling_display", "width": 12 }
+      ],
+      "sub_resources": [],
+      "actions": []
+    }
+  }
+}

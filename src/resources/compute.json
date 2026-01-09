@@ -1,0 +1,139 @@
+{
+  "resources": {
+    "compute-instances": {
+      "display_name": "VM Instances",
+      "service": "compute",
+      "sdk_method": "list_instances",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": false,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 25 },
+        { "header": "STATUS", "json_path": "status", "width": 12, "color_map": "status" },
+        { "header": "ZONE", "json_path": "zone_short", "width": 18 },
+        { "header": "MACHINE TYPE", "json_path": "machineType_short", "width": 15 },
+        { "header": "INTERNAL IP", "json_path": "networkInterfaces.0.networkIP", "width": 15 },
+        { "header": "EXTERNAL IP", "json_path": "networkInterfaces.0.accessConfigs.0.natIP", "width": 15 }
+      ],
+      "sub_resources": [
+        {
+          "resource_key": "compute-disks",
+          "display_name": "Disks",
+          "shortcut": "d",
+          "parent_id_field": "name",
+          "filter_param": "instance"
+        }
+      ],
+      "actions": [
+        { "key": "s", "display_name": "Start", "shortcut": "s", "sdk_method": "start_instance" },
+        { "key": "S", "display_name": "Stop", "shortcut": "S", "sdk_method": "stop_instance", "confirm": { "message": "Stop instance", "default_yes": false } },
+        { "key": "r", "display_name": "Reset", "shortcut": "r", "sdk_method": "reset_instance", "confirm": { "message": "Reset instance", "default_yes": false } },
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_instance", "confirm": { "message": "Delete instance", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "compute-disks": {
+      "display_name": "Persistent Disks",
+      "service": "compute",
+      "sdk_method": "list_disks",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": false,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "STATUS", "json_path": "status", "width": 12, "color_map": "status" },
+        { "header": "SIZE (GB)", "json_path": "sizeGb", "width": 10 },
+        { "header": "TYPE", "json_path": "type_short", "width": 15 },
+        { "header": "ZONE", "json_path": "zone_short", "width": 18 },
+        { "header": "USERS", "json_path": "users_count", "width": 8 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_disk", "confirm": { "message": "Delete disk", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "compute-networks": {
+      "display_name": "VPC Networks",
+      "service": "compute",
+      "sdk_method": "list_networks",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "SUBNETS", "json_path": "subnetworks_count", "width": 10 },
+        { "header": "MODE", "json_path": "autoCreateSubnetworks_display", "width": 15 },
+        { "header": "MTU", "json_path": "mtu", "width": 8 },
+        { "header": "DESCRIPTION", "json_path": "description", "width": 30 }
+      ],
+      "sub_resources": [
+        {
+          "resource_key": "compute-subnetworks",
+          "display_name": "Subnets",
+          "shortcut": "s",
+          "parent_id_field": "selfLink",
+          "filter_param": "network"
+        },
+        {
+          "resource_key": "compute-firewalls",
+          "display_name": "Firewalls",
+          "shortcut": "f",
+          "parent_id_field": "selfLink",
+          "filter_param": "network"
+        }
+      ],
+      "actions": []
+    },
+    "compute-subnetworks": {
+      "display_name": "Subnets",
+      "service": "compute",
+      "sdk_method": "list_subnetworks",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": false,
+      "is_regional": true,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 25 },
+        { "header": "REGION", "json_path": "region_short", "width": 18 },
+        { "header": "IP RANGE", "json_path": "ipCidrRange", "width": 18 },
+        { "header": "GATEWAY", "json_path": "gatewayAddress", "width": 15 },
+        { "header": "PRIVATE ACCESS", "json_path": "privateIpGoogleAccess", "width": 15 }
+      ],
+      "sub_resources": [],
+      "actions": []
+    },
+    "compute-firewalls": {
+      "display_name": "Firewall Rules",
+      "service": "compute",
+      "sdk_method": "list_firewalls",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "NETWORK", "json_path": "network_short", "width": 15 },
+        { "header": "DIRECTION", "json_path": "direction", "width": 10 },
+        { "header": "PRIORITY", "json_path": "priority", "width": 10 },
+        { "header": "ACTION", "json_path": "action_display", "width": 10 },
+        { "header": "DISABLED", "json_path": "disabled", "width": 10, "color_map": "bool" }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_firewall", "confirm": { "message": "Delete firewall rule", "default_yes": false, "destructive": true } }
+      ]
+    }
+  }
+}

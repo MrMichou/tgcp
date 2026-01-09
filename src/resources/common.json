@@ -1,0 +1,48 @@
+{
+  "color_maps": {
+    "status": [
+      { "value": "RUNNING", "color": [0, 255, 0] },
+      { "value": "TERMINATED", "color": [128, 128, 128] },
+      { "value": "STOPPED", "color": [255, 165, 0] },
+      { "value": "SUSPENDED", "color": [255, 165, 0] },
+      { "value": "STAGING", "color": [255, 255, 0] },
+      { "value": "PROVISIONING", "color": [255, 255, 0] },
+      { "value": "SUSPENDING", "color": [255, 255, 0] },
+      { "value": "STOPPING", "color": [255, 255, 0] },
+      { "value": "REPAIRING", "color": [255, 255, 0] },
+      { "value": "ACTIVE", "color": [0, 255, 0] },
+      { "value": "DELETING", "color": [255, 0, 0] },
+      { "value": "ERROR", "color": [255, 0, 0] },
+      { "value": "FAILED", "color": [255, 0, 0] }
+    ],
+    "gke_status": [
+      { "value": "RUNNING", "color": [0, 255, 0] },
+      { "value": "PROVISIONING", "color": [255, 255, 0] },
+      { "value": "RECONCILING", "color": [255, 255, 0] },
+      { "value": "STOPPING", "color": [255, 165, 0] },
+      { "value": "ERROR", "color": [255, 0, 0] },
+      { "value": "DEGRADED", "color": [255, 165, 0] },
+      { "value": "STATUS_UNSPECIFIED", "color": [128, 128, 128] }
+    ],
+    "storage_class": [
+      { "value": "STANDARD", "color": [0, 255, 0] },
+      { "value": "NEARLINE", "color": [0, 200, 255] },
+      { "value": "COLDLINE", "color": [100, 149, 237] },
+      { "value": "ARCHIVE", "color": [128, 128, 128] },
+      { "value": "MULTI_REGIONAL", "color": [0, 255, 0] },
+      { "value": "REGIONAL", "color": [0, 200, 255] }
+    ],
+    "bool": [
+      { "value": "true", "color": [0, 255, 0] },
+      { "value": "false", "color": [255, 165, 0] },
+      { "value": "Yes", "color": [0, 255, 0] },
+      { "value": "No", "color": [255, 165, 0] }
+    ],
+    "health": [
+      { "value": "HEALTHY", "color": [0, 255, 0] },
+      { "value": "UNHEALTHY", "color": [255, 0, 0] },
+      { "value": "UNKNOWN", "color": [128, 128, 128] }
+    ]
+  },
+  "resources": {}
+}

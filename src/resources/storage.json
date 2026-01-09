@@ -1,0 +1,56 @@
+{
+  "resources": {
+    "storage-buckets": {
+      "display_name": "Buckets",
+      "service": "storage",
+      "sdk_method": "list_buckets",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 35 },
+        { "header": "LOCATION", "json_path": "location", "width": 15 },
+        { "header": "STORAGE CLASS", "json_path": "storageClass", "width": 15, "color_map": "storage_class" },
+        { "header": "CREATED", "json_path": "timeCreated_short", "width": 12 },
+        { "header": "PUBLIC", "json_path": "iamConfiguration.publicAccessPrevention", "width": 12 }
+      ],
+      "sub_resources": [
+        {
+          "resource_key": "storage-objects",
+          "display_name": "Objects",
+          "shortcut": "o",
+          "parent_id_field": "name",
+          "filter_param": "bucket"
+        }
+      ],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_bucket", "confirm": { "message": "Delete bucket (must be empty)", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "storage-objects": {
+      "display_name": "Objects",
+      "service": "storage",
+      "sdk_method": "list_objects",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 40 },
+        { "header": "SIZE", "json_path": "size_display", "width": 12 },
+        { "header": "TYPE", "json_path": "contentType", "width": 20 },
+        { "header": "UPDATED", "json_path": "updated_short", "width": 12 },
+        { "header": "STORAGE CLASS", "json_path": "storageClass", "width": 15, "color_map": "storage_class" }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_object", "confirm": { "message": "Delete object", "default_yes": false, "destructive": true } }
+      ]
+    }
+  }
+}
