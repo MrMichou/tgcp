@@ -361,6 +361,76 @@ fn post_process_item(mut item: Value, resource_def: &ResourceDef) -> Value {
             let short = format_timestamp_short(expire_time);
             map.insert("expireTime_short".to_string(), Value::String(short));
         }
+
+        // Load Balancing specific fields
+        // Health check port (extract from type-specific config)
+        let port = map
+            .get("httpHealthCheck")
+            .or_else(|| map.get("httpsHealthCheck"))
+            .or_else(|| map.get("tcpHealthCheck"))
+            .or_else(|| map.get("sslHealthCheck"))
+            .or_else(|| map.get("http2HealthCheck"))
+            .or_else(|| map.get("grpcHealthCheck"))
+            .and_then(|v| v.get("port"))
+            .and_then(|v| v.as_i64())
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        map.insert("healthCheck_port".to_string(), Value::String(port));
+
+        // Count instances in target pool
+        if let Some(instances) = map.get("instances").and_then(|v| v.as_array()) {
+            map.insert(
+                "instances_count".to_string(),
+                Value::String(instances.len().to_string()),
+            );
+        }
+
+        // Short name for backup pool
+        if let Some(backup_pool) = map.get("backupPool").and_then(|v| v.as_str()) {
+            let short = extract_short_name(backup_pool);
+            map.insert("backupPool_short".to_string(), Value::String(short));
+        }
+
+        // Short name for service (TCP/SSL proxies)
+        if let Some(service) = map.get("service").and_then(|v| v.as_str()) {
+            let short = extract_short_name(service);
+            map.insert("service_short".to_string(), Value::String(short));
+        }
+
+        // Count enabled features in SSL policy
+        if let Some(features) = map.get("enabledFeatures").and_then(|v| v.as_array()) {
+            map.insert(
+                "enabledFeatures_count".to_string(),
+                Value::String(features.len().to_string()),
+            );
+        }
+
+        // Count rules in security policy
+        if let Some(rules) = map.get("rules").and_then(|v| v.as_array()) {
+            map.insert(
+                "rules_count".to_string(),
+                Value::String(rules.len().to_string()),
+            );
+        }
+
+        // Adaptive protection config display
+        if let Some(adaptive) = map
+            .get("adaptiveProtectionConfig")
+            .and_then(|v| v.get("layer7DdosDefenseConfig"))
+            .and_then(|v| v.get("enable"))
+            .and_then(|v| v.as_bool())
+        {
+            let display = if adaptive { "Yes" } else { "No" };
+            map.insert(
+                "adaptiveProtectionConfig_display".to_string(),
+                Value::String(display.to_string()),
+            );
+        } else {
+            map.insert(
+                "adaptiveProtectionConfig_display".to_string(),
+                Value::String("-".to_string()),
+            );
+        }
     }
 
     let _ = resource_def; // Silence unused warning

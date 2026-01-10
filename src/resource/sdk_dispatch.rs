@@ -165,6 +165,54 @@ async fn invoke_compute(method: &str, client: &GcpClient, params: &Value) -> Res
             let url = add_query_params(&url, params);
             client.get(&url).await
         },
+        // Load Balancing resources
+        "list_health_checks" => {
+            let url = client.compute_global_url("healthChecks");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_target_pools" => {
+            let url = client.compute_regional_url("targetPools");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_target_tcp_proxies" => {
+            let url = client.compute_global_url("targetTcpProxies");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_target_ssl_proxies" => {
+            let url = client.compute_global_url("targetSslProxies");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_target_grpc_proxies" => {
+            let url = client.compute_global_url("targetGrpcProxies");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_ssl_policies" => {
+            let url = client.compute_global_url("sslPolicies");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_security_policies" => {
+            let url = client.compute_global_url("securityPolicies");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_network_endpoint_groups" => {
+            if client.zone == "all" {
+                let url = client.compute_aggregated_url("networkEndpointGroups");
+                let url = add_query_params(&url, params);
+                let response = client.get(&url).await?;
+                Ok(flatten_aggregated_response(response))
+            } else {
+                let url = client.compute_zonal_url("networkEndpointGroups");
+                let url = add_query_params(&url, params);
+                client.get(&url).await
+            }
+        },
         _ => Err(anyhow::anyhow!("Unknown compute method: {}", method)),
     }
 }
@@ -227,6 +275,39 @@ async fn execute_compute_action(
         },
         "delete_ssl_certificate" => {
             let url = client.compute_global_url(&format!("sslCertificates/{}", resource_id));
+            client.delete(&url).await
+        },
+        // Load Balancing delete actions
+        "delete_health_check" => {
+            let url = client.compute_global_url(&format!("healthChecks/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_target_pool" => {
+            let url = client.compute_regional_url(&format!("targetPools/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_target_tcp_proxy" => {
+            let url = client.compute_global_url(&format!("targetTcpProxies/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_target_ssl_proxy" => {
+            let url = client.compute_global_url(&format!("targetSslProxies/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_target_grpc_proxy" => {
+            let url = client.compute_global_url(&format!("targetGrpcProxies/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_ssl_policy" => {
+            let url = client.compute_global_url(&format!("sslPolicies/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_security_policy" => {
+            let url = client.compute_global_url(&format!("securityPolicies/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_network_endpoint_group" => {
+            let url = client.compute_zonal_url(&format!("networkEndpointGroups/{}", resource_id));
             client.delete(&url).await
         },
         _ => Err(anyhow::anyhow!("Unknown compute action: {}", method)),

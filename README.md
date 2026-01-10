@@ -151,10 +151,15 @@ cargo install --path .
 - **Backend Services** - View, delete (shows CDN status)
 - **Backend Buckets** - View, delete (static content CDN)
 - **URL Maps** - View, delete (routing rules)
-- **HTTP Proxies** - View, delete
-- **HTTPS Proxies** - View, delete
+- **HTTP/HTTPS Proxies** - View, delete
+- **TCP/SSL/gRPC Proxies** - View, delete
 - **Forwarding Rules** - View, delete (external IPs)
 - **SSL Certificates** - View, delete (managed & self-managed)
+- **Health Checks** - View, delete
+- **Target Pools** - View, delete (legacy network LB)
+- **SSL Policies** - View, delete (TLS configuration)
+- **Security Policies** - View, delete (Cloud Armor WAF/DDoS)
+- **Network Endpoint Groups** - View, delete (NEGs)
 
 ## Configuration
 

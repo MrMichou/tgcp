@@ -153,6 +153,182 @@
       "actions": [
         { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_ssl_certificate", "confirm": { "message": "Delete SSL certificate", "default_yes": false, "destructive": true } }
       ]
+    },
+    "lb-health-checks": {
+      "display_name": "Health Checks",
+      "service": "compute",
+      "sdk_method": "list_health_checks",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "TYPE", "json_path": "type", "width": 12 },
+        { "header": "PORT", "json_path": "healthCheck_port", "width": 8 },
+        { "header": "INTERVAL", "json_path": "checkIntervalSec", "width": 10 },
+        { "header": "TIMEOUT", "json_path": "timeoutSec", "width": 10 },
+        { "header": "HEALTHY", "json_path": "healthyThreshold", "width": 10 },
+        { "header": "UNHEALTHY", "json_path": "unhealthyThreshold", "width": 10 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_health_check", "confirm": { "message": "Delete health check", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "lb-target-pools": {
+      "display_name": "Target Pools",
+      "service": "compute",
+      "sdk_method": "list_target_pools",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": false,
+      "is_regional": true,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "REGION", "json_path": "region_short", "width": 18 },
+        { "header": "INSTANCES", "json_path": "instances_count", "width": 12 },
+        { "header": "SESSION", "json_path": "sessionAffinity", "width": 15 },
+        { "header": "BACKUP POOL", "json_path": "backupPool_short", "width": 20 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_target_pool", "confirm": { "message": "Delete target pool", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "lb-target-tcp-proxies": {
+      "display_name": "TCP Proxies",
+      "service": "compute",
+      "sdk_method": "list_target_tcp_proxies",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "SERVICE", "json_path": "service_short", "width": 35 },
+        { "header": "PROXY HEADER", "json_path": "proxyHeader", "width": 15 },
+        { "header": "DESCRIPTION", "json_path": "description", "width": 30 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_target_tcp_proxy", "confirm": { "message": "Delete TCP proxy", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "lb-target-ssl-proxies": {
+      "display_name": "SSL Proxies",
+      "service": "compute",
+      "sdk_method": "list_target_ssl_proxies",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "SERVICE", "json_path": "service_short", "width": 30 },
+        { "header": "SSL CERTS", "json_path": "sslCertificates_count", "width": 12 },
+        { "header": "SSL POLICY", "json_path": "sslPolicy_short", "width": 20 },
+        { "header": "PROXY HEADER", "json_path": "proxyHeader", "width": 15 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_target_ssl_proxy", "confirm": { "message": "Delete SSL proxy", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "lb-target-grpc-proxies": {
+      "display_name": "gRPC Proxies",
+      "service": "compute",
+      "sdk_method": "list_target_grpc_proxies",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "URL MAP", "json_path": "urlMap_short", "width": 35 },
+        { "header": "VALIDATE", "json_path": "validateForProxyless", "width": 12 },
+        { "header": "DESCRIPTION", "json_path": "description", "width": 30 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_target_grpc_proxy", "confirm": { "message": "Delete gRPC proxy", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "lb-ssl-policies": {
+      "display_name": "SSL Policies",
+      "service": "compute",
+      "sdk_method": "list_ssl_policies",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "PROFILE", "json_path": "profile", "width": 15 },
+        { "header": "MIN TLS", "json_path": "minTlsVersion", "width": 12 },
+        { "header": "FEATURES", "json_path": "enabledFeatures_count", "width": 12 },
+        { "header": "DESCRIPTION", "json_path": "description", "width": 30 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_ssl_policy", "confirm": { "message": "Delete SSL policy", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "lb-security-policies": {
+      "display_name": "Security Policies",
+      "service": "compute",
+      "sdk_method": "list_security_policies",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "TYPE", "json_path": "type", "width": 15 },
+        { "header": "RULES", "json_path": "rules_count", "width": 8 },
+        { "header": "ADAPTIVE", "json_path": "adaptiveProtectionConfig_display", "width": 12 },
+        { "header": "DESCRIPTION", "json_path": "description", "width": 35 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_security_policy", "confirm": { "message": "Delete security policy", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "lb-network-endpoint-groups": {
+      "display_name": "Network Endpoint Groups",
+      "service": "compute",
+      "sdk_method": "list_network_endpoint_groups",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": false,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "TYPE", "json_path": "networkEndpointType", "width": 20 },
+        { "header": "ZONE", "json_path": "zone_short", "width": 18 },
+        { "header": "SIZE", "json_path": "size", "width": 8 },
+        { "header": "NETWORK", "json_path": "network_short", "width": 20 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_network_endpoint_group", "confirm": { "message": "Delete network endpoint group", "default_yes": false, "destructive": true } }
+      ]
     }
   }
 }

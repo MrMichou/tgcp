@@ -284,8 +284,16 @@ Version is injected at compile time via `TGCP_VERSION` environment variable (for
 - URL Maps (`cdn-url-maps`)
 - HTTP Proxies (`cdn-target-http-proxies`)
 - HTTPS Proxies (`cdn-target-https-proxies`)
+- TCP Proxies (`lb-target-tcp-proxies`)
+- SSL Proxies (`lb-target-ssl-proxies`)
+- gRPC Proxies (`lb-target-grpc-proxies`)
 - Forwarding Rules (`cdn-forwarding-rules`)
 - SSL Certificates (`cdn-ssl-certificates`)
+- Health Checks (`lb-health-checks`)
+- Target Pools (`lb-target-pools`)
+- SSL Policies (`lb-ssl-policies`)
+- Security Policies (`lb-security-policies`) - Cloud Armor
+- Network Endpoint Groups (`lb-network-endpoint-groups`)
 
 ## Troubleshooting
 
