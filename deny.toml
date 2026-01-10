@@ -17,9 +17,9 @@ targets = [
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 
-# How to handle unmaintained crates
-unmaintained = "warn"
-# How to handle yanked crates
+# Which crates to check for unmaintained status (scope)
+unmaintained = "workspace"
+# How to handle yanked crates (severity)
 yanked = "deny"
 # Ignore specific advisories (add IDs here if needed)
 ignore = []
