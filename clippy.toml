@@ -16,8 +16,6 @@ allowed-wildcard-imports = []
 # Maximum size of objects on the stack that are allowed to be moved
 trivial-copy-size-limit = 8
 
-# MSRV - Minimum Supported Rust Version
-msrv = "1.85.0"
 
 # Maximum number of lines a function can have
 single-char-binding-names-threshold = 4
