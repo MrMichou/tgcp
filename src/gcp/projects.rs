@@ -43,12 +43,12 @@ impl From<&Value> for Project {
     }
 }
 
-/// List all accessible GCP projects
+/// List all accessible GCP projects (sorted alphabetically by project_id)
 pub async fn list_projects(client: &GcpClient) -> Result<Vec<Project>> {
     let url = client.resourcemanager_url("projects");
     let response = client.get(&url).await?;
 
-    let projects = response
+    let mut projects: Vec<Project> = response
         .get("projects")
         .and_then(|v| v.as_array())
         .map(|arr| {
@@ -64,6 +64,13 @@ pub async fn list_projects(client: &GcpClient) -> Result<Vec<Project>> {
                 .collect()
         })
         .unwrap_or_default();
+
+    // Sort alphabetically by project_id
+    projects.sort_by(|a, b| {
+        a.project_id
+            .to_lowercase()
+            .cmp(&b.project_id.to_lowercase())
+    });
 
     Ok(projects)
 }
