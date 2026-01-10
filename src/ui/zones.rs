@@ -37,10 +37,19 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD)
+            } else if zone == "all" {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
-            ListItem::new(Span::styled(format!("  {}", zone), style))
+            let display_name = if zone == "all" {
+                "  ★ All zones".to_string()
+            } else {
+                format!("  {}", zone)
+            };
+            ListItem::new(Span::styled(display_name, style))
         })
         .collect();
 

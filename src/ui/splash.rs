@@ -22,7 +22,7 @@ impl SplashState {
         Self {
             message: "Initializing...".to_string(),
             completed_steps: 0,
-            total_steps: 4,
+            total_steps: 5,
         }
     }
 

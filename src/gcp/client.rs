@@ -156,6 +156,27 @@ impl GcpClient {
     pub fn resourcemanager_url(&self, path: &str) -> String {
         format!("https://cloudresourcemanager.googleapis.com/v1/{}", path)
     }
+
+    /// List all available zones for the current project
+    pub async fn list_zones(&self) -> Result<Vec<String>> {
+        let url = self.compute_url("zones");
+        let response = self.get(&url).await?;
+
+        let zones = response
+            .get("items")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                let mut zones: Vec<String> = arr
+                    .iter()
+                    .filter_map(|z| z.get("name").and_then(|n| n.as_str()).map(String::from))
+                    .collect();
+                zones.sort();
+                zones
+            })
+            .unwrap_or_default();
+
+        Ok(zones)
+    }
 }
 
 /// Format a GCP API error for display

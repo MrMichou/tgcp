@@ -80,14 +80,29 @@ pub async fn describe_resource(
 async fn invoke_compute(method: &str, client: &GcpClient, params: &Value) -> Result<Value> {
     match method {
         "list_instances" => {
-            let url = client.compute_zonal_url("instances");
-            let url = add_query_params(&url, params);
-            client.get(&url).await
+            if client.zone == "all" {
+                // Use aggregated API to get instances from all zones
+                let url = client.compute_aggregated_url("instances");
+                let url = add_query_params(&url, params);
+                let response = client.get(&url).await?;
+                Ok(flatten_aggregated_response(response))
+            } else {
+                let url = client.compute_zonal_url("instances");
+                let url = add_query_params(&url, params);
+                client.get(&url).await
+            }
         }
         "list_disks" => {
-            let url = client.compute_zonal_url("disks");
-            let url = add_query_params(&url, params);
-            client.get(&url).await
+            if client.zone == "all" {
+                let url = client.compute_aggregated_url("disks");
+                let url = add_query_params(&url, params);
+                let response = client.get(&url).await?;
+                Ok(flatten_aggregated_response(response))
+            } else {
+                let url = client.compute_zonal_url("disks");
+                let url = add_query_params(&url, params);
+                client.get(&url).await
+            }
         }
         "list_networks" => {
             let url = client.compute_global_url("networks");
@@ -291,4 +306,33 @@ fn add_query_params(url: &str, params: &Value) -> String {
     } else {
         format!("{}?{}", url, query_parts.join("&"))
     }
+}
+
+/// Flatten an aggregated API response into a standard list response.
+/// Aggregated responses have format: { "items": { "zones/us-central1-a": { "instances": [...] }, ... } }
+/// We flatten to: { "items": [...all instances...] }
+fn flatten_aggregated_response(response: Value) -> Value {
+    let Some(items) = response.get("items").and_then(|v| v.as_object()) else {
+        return serde_json::json!({ "items": [] });
+    };
+
+    let mut all_items: Vec<Value> = Vec::new();
+
+    for (_zone_key, zone_data) in items {
+        // Each zone entry may have "instances", "disks", etc.
+        // Look for any array field that contains the actual resources
+        if let Some(obj) = zone_data.as_object() {
+            for (key, value) in obj {
+                // Skip warning field and other metadata
+                if key == "warning" {
+                    continue;
+                }
+                if let Some(arr) = value.as_array() {
+                    all_items.extend(arr.iter().cloned());
+                }
+            }
+        }
+    }
+
+    serde_json::json!({ "items": all_items })
 }

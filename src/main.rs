@@ -213,18 +213,7 @@ where
         return Ok(None);
     }
 
-    // Step 2: Load available zones
-    splash.set_message("Loading zones");
-    terminal.draw(|f| render_splash(f, &splash))?;
-
-    let available_zones = auth::list_zones();
-    splash.complete_step();
-
-    if check_abort()? {
-        return Ok(None);
-    }
-
-    // Step 3: Initialize GCP client
+    // Step 2: Initialize GCP client
     splash.set_message(&format!("Connecting to GCP [{}]", zone));
     terminal.draw(|f| render_splash(f, &splash))?;
 
@@ -235,7 +224,64 @@ where
         return Ok(None);
     }
 
-    // Step 4: Fetch initial data (VM instances)
+    // Step 3: Fetch available projects
+    splash.set_message("Fetching projects");
+    terminal.draw(|f| render_splash(f, &splash))?;
+
+    let available_projects = match gcp::projects::list_project_ids(&client).await {
+        Ok(projects) if !projects.is_empty() => {
+            tracing::info!("Loaded {} projects", projects.len());
+            projects
+        }
+        Ok(_) => {
+            tracing::warn!("No projects returned, using current project only");
+            vec![project.clone()]
+        }
+        Err(e) => {
+            tracing::warn!("Failed to list projects: {}, using current project only", e);
+            vec![project.clone()]
+        }
+    };
+
+    splash.complete_step();
+
+    if check_abort()? {
+        return Ok(None);
+    }
+
+    // Step 4: Fetch available zones
+    splash.set_message("Fetching zones");
+    terminal.draw(|f| render_splash(f, &splash))?;
+
+    let available_zones = match client.list_zones().await {
+        Ok(zones) if !zones.is_empty() => {
+            tracing::info!("Loaded {} zones", zones.len());
+            // Add "all" as first option to show all zones
+            let mut all_zones = vec!["all".to_string()];
+            all_zones.extend(zones);
+            all_zones
+        }
+        Ok(_) => {
+            tracing::warn!("No zones returned, using static list");
+            let mut all_zones = vec!["all".to_string()];
+            all_zones.extend(auth::list_zones());
+            all_zones
+        }
+        Err(e) => {
+            tracing::warn!("Failed to list zones: {}, using static list", e);
+            let mut all_zones = vec!["all".to_string()];
+            all_zones.extend(auth::list_zones());
+            all_zones
+        }
+    };
+
+    splash.complete_step();
+
+    if check_abort()? {
+        return Ok(None);
+    }
+
+    // Step 5: Fetch initial data (VM instances)
     splash.set_message(&format!("Fetching instances from {}", zone));
     terminal.draw(|f| render_splash(f, &splash))?;
 
@@ -254,9 +300,6 @@ where
     terminal.draw(|f| render_splash(f, &splash))?;
 
     tokio::time::sleep(Duration::from_millis(200)).await;
-
-    // For now, use an empty project list (can be fetched later)
-    let available_projects = vec![project.clone()];
 
     let mut app = App::from_initialized(
         client,

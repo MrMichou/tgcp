@@ -50,9 +50,9 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("  "),
         Span::styled("Zone: ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            &app.zone,
+            if app.zone == "all" { "All zones" } else { &app.zone },
             Style::default()
-                .fg(Color::Green)
+                .fg(if app.zone == "all" { Color::Yellow } else { Color::Green })
                 .add_modifier(Modifier::BOLD),
         ),
     ]);
