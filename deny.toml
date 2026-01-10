@@ -43,13 +43,6 @@ allow = [
     "Unlicense",
 ]
 
-# Copyleft licenses we want to deny
-deny = [
-    "GPL-2.0",
-    "GPL-3.0",
-    "AGPL-3.0",
-]
-
 # Clarification for crates with unclear licenses
 [[licenses.clarify]]
 name = "ring"
