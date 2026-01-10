@@ -260,7 +260,7 @@ fn post_process_item(mut item: Value, resource_def: &ResourceDef) -> Value {
 }
 
 /// Extract short name from GCP resource URL
-/// e.g., "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a" -> "us-central1-a"
+/// e.g., `https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a` -> `us-central1-a`
 fn extract_short_name(url: &str) -> String {
     url.rsplit('/').next().unwrap_or(url).to_string()
 }

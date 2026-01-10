@@ -17,7 +17,7 @@ allowed-wildcard-imports = []
 trivial-copy-size-limit = 8
 
 # MSRV - Minimum Supported Rust Version
-msrv = "1.78.0"
+msrv = "1.82.0"
 
 # Maximum number of lines a function can have
 single-char-binding-names-threshold = 4

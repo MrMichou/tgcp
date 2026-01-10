@@ -5,7 +5,7 @@
 [![CI](https://github.com/MrMichou/tgcp/actions/workflows/ci.yml/badge.svg)](https://github.com/MrMichou/tgcp/actions/workflows/ci.yml)
 [![Security](https://github.com/MrMichou/tgcp/actions/workflows/security.yml/badge.svg)](https://github.com/MrMichou/tgcp/actions/workflows/security.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.78%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.82%2B-orange.svg)](https://www.rust-lang.org/)
 
 A fast, keyboard-driven terminal interface for navigating and managing Google Cloud Platform resources. Inspired by vim, built with Rust.
 
@@ -57,7 +57,7 @@ cargo install --path .
 
 ### Prerequisites
 
-- Rust 1.78 or later
+- Rust 1.82 or later
 - Google Cloud SDK (`gcloud`) configured with credentials
 
 ## Quick Start
