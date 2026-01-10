@@ -22,3 +22,7 @@ logs/
 # Environment
 .env
 .env.local
+
+# Claude Code local state
+.claude-flow/
+.hive-mind/

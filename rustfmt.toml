@@ -1,0 +1,29 @@
+# Rust formatting configuration
+# https://rust-lang.github.io/rustfmt/
+# Only stable options are included
+
+# Use the 2021 edition style
+edition = "2021"
+
+# Maximum line width
+max_width = 100
+
+# Use spaces for indentation
+hard_tabs = false
+tab_spaces = 4
+
+# Reorder imports and modules alphabetically
+reorder_imports = true
+reorder_modules = true
+
+# Use field init shorthand (e.g., Foo { x } instead of Foo { x: x })
+use_field_init_shorthand = true
+
+# Use try! shorthand (?)
+use_try_shorthand = true
+
+# Newlines - Auto detects based on file
+newline_style = "Auto"
+
+# Trailing comma in match blocks
+match_block_trailing_comma = true

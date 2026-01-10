@@ -1,0 +1,175 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v0.1.0)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  # Create the release first
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: tgcp ${{ steps.get_version.outputs.version }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+
+  # Build binaries for each platform
+  build:
+    name: Build (${{ matrix.target }})
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 (GNU)
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: tgcp
+            asset_name: tgcp-linux-x86_64
+
+          # Linux x86_64 (musl - static binary)
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact_name: tgcp
+            asset_name: tgcp-linux-x86_64-musl
+
+          # Linux ARM64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact_name: tgcp
+            asset_name: tgcp-linux-aarch64
+
+          # macOS x86_64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: tgcp
+            asset_name: tgcp-darwin-x86_64
+
+          # macOS ARM64 (Apple Silicon)
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: tgcp
+            asset_name: tgcp-darwin-aarch64
+
+          # Windows x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: tgcp.exe
+            asset_name: tgcp-windows-x86_64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # Install cross-compilation dependencies for Linux
+      - name: Install Linux cross-compilation tools
+        if: matrix.os == 'ubuntu-latest' && matrix.target != 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-musl)
+              sudo apt-get install -y musl-tools
+              ;;
+            aarch64-unknown-linux-gnu)
+              sudo apt-get install -y gcc-aarch64-linux-gnu
+              ;;
+          esac
+
+      # Set up cross-compilation environment
+      - name: Configure cross-compilation
+        if: matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          TGCP_VERSION: ${{ needs.create-release.outputs.version }}
+
+      # Package the binary
+      - name: Package (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czvf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+          cd ../../..
+          sha256sum ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+
+      - name: Package (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target/${{ matrix.target }}/release/${{ matrix.artifact_name }}" -DestinationPath "${{ matrix.asset_name }}.zip"
+          $hash = (Get-FileHash "${{ matrix.asset_name }}.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  ${{ matrix.asset_name }}.zip" | Out-File -FilePath "${{ matrix.asset_name }}.zip.sha256" -Encoding ascii
+
+      # Upload to release
+      - name: Upload Release Asset (Unix)
+        if: matrix.os != 'windows-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: |
+            ${{ matrix.asset_name }}.tar.gz
+            ${{ matrix.asset_name }}.tar.gz.sha256
+
+      - name: Upload Release Asset (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: |
+            ${{ matrix.asset_name }}.zip
+            ${{ matrix.asset_name }}.zip.sha256
+
+  # Publish release after all builds complete
+  publish-release:
+    name: Publish Release
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          draft: false
