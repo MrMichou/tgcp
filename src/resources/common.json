@@ -42,6 +42,18 @@
       { "value": "HEALTHY", "color": [0, 255, 0] },
       { "value": "UNHEALTHY", "color": [255, 0, 0] },
       { "value": "UNKNOWN", "color": [128, 128, 128] }
+    ],
+    "cdn_enabled": [
+      { "value": "Yes", "color": [0, 255, 0] },
+      { "value": "No", "color": [128, 128, 128] }
+    ],
+    "ssl_status": [
+      { "value": "ACTIVE", "color": [0, 255, 0] },
+      { "value": "MANAGED_CERTIFICATE_STATUS_UNSPECIFIED", "color": [128, 128, 128] },
+      { "value": "PROVISIONING", "color": [255, 255, 0] },
+      { "value": "PROVISIONING_FAILED", "color": [255, 0, 0] },
+      { "value": "PROVISIONING_FAILED_PERMANENTLY", "color": [255, 0, 0] },
+      { "value": "RENEWAL_FAILED", "color": [255, 165, 0] }
     ]
   },
   "resources": {}

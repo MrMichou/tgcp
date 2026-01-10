@@ -278,6 +278,15 @@ Version is injected at compile time via `TGCP_VERSION` environment variable (for
 - Clusters (`gke-clusters`)
 - Node Pools (`gke-nodepools`)
 
+### Cloud CDN / Load Balancing
+- Backend Services (`cdn-backend-services`)
+- Backend Buckets (`cdn-backend-buckets`)
+- URL Maps (`cdn-url-maps`)
+- HTTP Proxies (`cdn-target-http-proxies`)
+- HTTPS Proxies (`cdn-target-https-proxies`)
+- Forwarding Rules (`cdn-forwarding-rules`)
+- SSL Certificates (`cdn-ssl-certificates`)
+
 ## Troubleshooting
 
 ### "Permission denied" errors

@@ -253,6 +253,114 @@ fn post_process_item(mut item: Value, resource_def: &ResourceDef) -> Value {
                 Value::String(display.to_string()),
             );
         }
+
+        // CDN / Load Balancing specific fields
+        // enableCDN for backend services
+        if let Some(enable_cdn) = map.get("enableCDN").and_then(|v| v.as_bool()) {
+            let display = if enable_cdn { "Yes" } else { "No" };
+            map.insert(
+                "enableCDN_display".to_string(),
+                Value::String(display.to_string()),
+            );
+        }
+
+        // enableCdn for backend buckets (note different case)
+        if let Some(enable_cdn) = map.get("enableCdn").and_then(|v| v.as_bool()) {
+            let display = if enable_cdn { "Yes" } else { "No" };
+            map.insert(
+                "enableCdn_display".to_string(),
+                Value::String(display.to_string()),
+            );
+        }
+
+        // Count backends
+        if let Some(backends) = map.get("backends").and_then(|v| v.as_array()) {
+            map.insert(
+                "backends_count".to_string(),
+                Value::String(backends.len().to_string()),
+            );
+        }
+
+        // Short name for health checks (take first one)
+        if let Some(health_checks) = map.get("healthChecks").and_then(|v| v.as_array()) {
+            let display = health_checks
+                .first()
+                .and_then(|v| v.as_str())
+                .map(extract_short_name)
+                .unwrap_or_else(|| "-".to_string());
+            map.insert("healthChecks_short".to_string(), Value::String(display));
+        }
+
+        // Count host rules
+        if let Some(host_rules) = map.get("hostRules").and_then(|v| v.as_array()) {
+            map.insert(
+                "hostRules_count".to_string(),
+                Value::String(host_rules.len().to_string()),
+            );
+        }
+
+        // Count path matchers
+        if let Some(path_matchers) = map.get("pathMatchers").and_then(|v| v.as_array()) {
+            map.insert(
+                "pathMatchers_count".to_string(),
+                Value::String(path_matchers.len().to_string()),
+            );
+        }
+
+        // Short name for default service
+        if let Some(default_service) = map.get("defaultService").and_then(|v| v.as_str()) {
+            let short = extract_short_name(default_service);
+            map.insert("defaultService_short".to_string(), Value::String(short));
+        }
+
+        // Short name for URL map
+        if let Some(url_map) = map.get("urlMap").and_then(|v| v.as_str()) {
+            let short = extract_short_name(url_map);
+            map.insert("urlMap_short".to_string(), Value::String(short));
+        }
+
+        // Count SSL certificates
+        if let Some(ssl_certs) = map.get("sslCertificates").and_then(|v| v.as_array()) {
+            map.insert(
+                "sslCertificates_count".to_string(),
+                Value::String(ssl_certs.len().to_string()),
+            );
+        }
+
+        // Short name for SSL policy
+        if let Some(ssl_policy) = map.get("sslPolicy").and_then(|v| v.as_str()) {
+            let short = extract_short_name(ssl_policy);
+            map.insert("sslPolicy_short".to_string(), Value::String(short));
+        }
+
+        // Short name for target (forwarding rules)
+        if let Some(target) = map.get("target").and_then(|v| v.as_str()) {
+            let short = extract_short_name(target);
+            map.insert("target_short".to_string(), Value::String(short));
+        }
+
+        // Display subject alternative names (first 3)
+        if let Some(sans) = map
+            .get("subjectAlternativeNames")
+            .and_then(|v| v.as_array())
+        {
+            let display: Vec<&str> = sans.iter().filter_map(|v| v.as_str()).take(3).collect();
+            let suffix = if sans.len() > 3 {
+                format!(" +{}", sans.len() - 3)
+            } else {
+                String::new()
+            };
+            map.insert(
+                "subjectAlternativeNames_display".to_string(),
+                Value::String(format!("{}{}", display.join(", "), suffix)),
+            );
+        }
+
+        // Short expire time
+        if let Some(expire_time) = map.get("expireTime").and_then(|v| v.as_str()) {
+            let short = format_timestamp_short(expire_time);
+            map.insert("expireTime_short".to_string(), Value::String(short));
+        }
     }
 
     let _ = resource_def; // Silence unused warning

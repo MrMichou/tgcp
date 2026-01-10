@@ -129,6 +129,42 @@ async fn invoke_compute(method: &str, client: &GcpClient, params: &Value) -> Res
             let url = client.compute_zonal_url(&format!("instances/{}", name));
             client.get(&url).await
         },
+        // CDN / Load Balancing resources
+        "list_backend_services" => {
+            let url = client.compute_global_url("backendServices");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_backend_buckets" => {
+            let url = client.compute_global_url("backendBuckets");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_url_maps" => {
+            let url = client.compute_global_url("urlMaps");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_target_http_proxies" => {
+            let url = client.compute_global_url("targetHttpProxies");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_target_https_proxies" => {
+            let url = client.compute_global_url("targetHttpsProxies");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_global_forwarding_rules" => {
+            let url = client.compute_global_url("globalForwardingRules");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
+        "list_ssl_certificates" => {
+            let url = client.compute_global_url("sslCertificates");
+            let url = add_query_params(&url, params);
+            client.get(&url).await
+        },
         _ => Err(anyhow::anyhow!("Unknown compute method: {}", method)),
     }
 }
@@ -162,6 +198,35 @@ async fn execute_compute_action(
         },
         "delete_firewall" => {
             let url = client.compute_global_url(&format!("firewalls/{}", resource_id));
+            client.delete(&url).await
+        },
+        // CDN / Load Balancing delete actions
+        "delete_backend_service" => {
+            let url = client.compute_global_url(&format!("backendServices/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_backend_bucket" => {
+            let url = client.compute_global_url(&format!("backendBuckets/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_url_map" => {
+            let url = client.compute_global_url(&format!("urlMaps/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_target_http_proxy" => {
+            let url = client.compute_global_url(&format!("targetHttpProxies/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_target_https_proxy" => {
+            let url = client.compute_global_url(&format!("targetHttpsProxies/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_global_forwarding_rule" => {
+            let url = client.compute_global_url(&format!("globalForwardingRules/{}", resource_id));
+            client.delete(&url).await
+        },
+        "delete_ssl_certificate" => {
+            let url = client.compute_global_url(&format!("sslCertificates/{}", resource_id));
             client.delete(&url).await
         },
         _ => Err(anyhow::anyhow!("Unknown compute action: {}", method)),

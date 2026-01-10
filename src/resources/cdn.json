@@ -1,0 +1,158 @@
+{
+  "resources": {
+    "cdn-backend-services": {
+      "display_name": "Backend Services",
+      "service": "compute",
+      "sdk_method": "list_backend_services",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "PROTOCOL", "json_path": "protocol", "width": 10 },
+        { "header": "CDN", "json_path": "enableCDN_display", "width": 8, "color_map": "cdn_enabled" },
+        { "header": "BACKENDS", "json_path": "backends_count", "width": 10 },
+        { "header": "HEALTH CHECK", "json_path": "healthChecks_short", "width": 25 },
+        { "header": "TIMEOUT", "json_path": "timeoutSec", "width": 10 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_backend_service", "confirm": { "message": "Delete backend service", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "cdn-backend-buckets": {
+      "display_name": "Backend Buckets",
+      "service": "compute",
+      "sdk_method": "list_backend_buckets",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "BUCKET", "json_path": "bucketName", "width": 30 },
+        { "header": "CDN", "json_path": "enableCdn_display", "width": 8, "color_map": "cdn_enabled" },
+        { "header": "COMPRESSION", "json_path": "compressionMode", "width": 15 },
+        { "header": "DESCRIPTION", "json_path": "description", "width": 30 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_backend_bucket", "confirm": { "message": "Delete backend bucket", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "cdn-url-maps": {
+      "display_name": "URL Maps",
+      "service": "compute",
+      "sdk_method": "list_url_maps",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "DEFAULT SERVICE", "json_path": "defaultService_short", "width": 30 },
+        { "header": "HOST RULES", "json_path": "hostRules_count", "width": 12 },
+        { "header": "PATH MATCHERS", "json_path": "pathMatchers_count", "width": 15 },
+        { "header": "DESCRIPTION", "json_path": "description", "width": 30 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_url_map", "confirm": { "message": "Delete URL map", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "cdn-target-http-proxies": {
+      "display_name": "HTTP Proxies",
+      "service": "compute",
+      "sdk_method": "list_target_http_proxies",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "URL MAP", "json_path": "urlMap_short", "width": 35 },
+        { "header": "DESCRIPTION", "json_path": "description", "width": 40 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_target_http_proxy", "confirm": { "message": "Delete HTTP proxy", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "cdn-target-https-proxies": {
+      "display_name": "HTTPS Proxies",
+      "service": "compute",
+      "sdk_method": "list_target_https_proxies",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "URL MAP", "json_path": "urlMap_short", "width": 30 },
+        { "header": "SSL CERTS", "json_path": "sslCertificates_count", "width": 12 },
+        { "header": "SSL POLICY", "json_path": "sslPolicy_short", "width": 20 },
+        { "header": "QUIC", "json_path": "quicOverride", "width": 10 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_target_https_proxy", "confirm": { "message": "Delete HTTPS proxy", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "cdn-forwarding-rules": {
+      "display_name": "Forwarding Rules",
+      "service": "compute",
+      "sdk_method": "list_global_forwarding_rules",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "IP ADDRESS", "json_path": "IPAddress", "width": 18 },
+        { "header": "PROTOCOL", "json_path": "IPProtocol", "width": 10 },
+        { "header": "PORT RANGE", "json_path": "portRange", "width": 12 },
+        { "header": "TARGET", "json_path": "target_short", "width": 30 },
+        { "header": "TIER", "json_path": "networkTier", "width": 10 }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_global_forwarding_rule", "confirm": { "message": "Delete forwarding rule", "default_yes": false, "destructive": true } }
+      ]
+    },
+    "cdn-ssl-certificates": {
+      "display_name": "SSL Certificates",
+      "service": "compute",
+      "sdk_method": "list_ssl_certificates",
+      "sdk_method_params": {},
+      "response_path": "items",
+      "id_field": "id",
+      "name_field": "name",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "name", "width": 30 },
+        { "header": "TYPE", "json_path": "type", "width": 15 },
+        { "header": "DOMAINS", "json_path": "subjectAlternativeNames_display", "width": 40 },
+        { "header": "EXPIRES", "json_path": "expireTime_short", "width": 12 },
+        { "header": "STATUS", "json_path": "managed.status", "width": 15, "color_map": "ssl_status" }
+      ],
+      "sub_resources": [],
+      "actions": [
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_ssl_certificate", "confirm": { "message": "Delete SSL certificate", "default_yes": false, "destructive": true } }
+      ]
+    }
+  }
+}

@@ -147,6 +147,15 @@ cargo install --path .
 - **Clusters** - View, navigate to node pools
 - **Node Pools** - View
 
+### Cloud CDN / Load Balancing
+- **Backend Services** - View, delete (shows CDN status)
+- **Backend Buckets** - View, delete (static content CDN)
+- **URL Maps** - View, delete (routing rules)
+- **HTTP Proxies** - View, delete
+- **HTTPS Proxies** - View, delete
+- **Forwarding Rules** - View, delete (external IPs)
+- **SSL Certificates** - View, delete (managed & self-managed)
+
 ## Configuration
 
 Configuration is stored at `~/.config/tgcp/config.json`:
