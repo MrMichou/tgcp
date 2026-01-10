@@ -40,7 +40,8 @@ pub async fn fetch_resources(
     let mut page_token: Option<String> = None;
 
     loop {
-        let result = fetch_resources_paginated(resource_key, client, filters, page_token.as_deref()).await?;
+        let result =
+            fetch_resources_paginated(resource_key, client, filters, page_token.as_deref()).await?;
         all_items.extend(result.items);
 
         if result.next_token.is_none() {
@@ -72,9 +73,16 @@ pub async fn fetch_resources_paginated(
     // Add filters
     if let Value::Object(ref mut map) = params {
         for filter in filters {
-            map.insert(filter.param.clone(), Value::Array(
-                filter.values.iter().map(|v| Value::String(v.clone())).collect()
-            ));
+            map.insert(
+                filter.param.clone(),
+                Value::Array(
+                    filter
+                        .values
+                        .iter()
+                        .map(|v| Value::String(v.clone()))
+                        .collect(),
+                ),
+            );
         }
 
         // Add page token
@@ -89,7 +97,8 @@ pub async fn fetch_resources_paginated(
         &resource_def.sdk_method,
         client,
         &params,
-    ).await?;
+    )
+    .await?;
 
     // Extract items from response path
     let items = extract_items(&response, &resource_def.response_path, resource_def);
@@ -163,24 +172,39 @@ fn post_process_item(mut item: Value, resource_def: &ResourceDef) -> Value {
 
         // Count arrays
         if let Some(users) = map.get("users").and_then(|v| v.as_array()) {
-            map.insert("users_count".to_string(), Value::String(users.len().to_string()));
+            map.insert(
+                "users_count".to_string(),
+                Value::String(users.len().to_string()),
+            );
         }
 
         if let Some(subnets) = map.get("subnetworks").and_then(|v| v.as_array()) {
-            map.insert("subnetworks_count".to_string(), Value::String(subnets.len().to_string()));
+            map.insert(
+                "subnetworks_count".to_string(),
+                Value::String(subnets.len().to_string()),
+            );
         }
 
         // Format booleans
         if let Some(auto_create) = map.get("autoCreateSubnetworks").and_then(|v| v.as_bool()) {
             let display = if auto_create { "Auto" } else { "Custom" };
-            map.insert("autoCreateSubnetworks_display".to_string(), Value::String(display.to_string()));
+            map.insert(
+                "autoCreateSubnetworks_display".to_string(),
+                Value::String(display.to_string()),
+            );
         }
 
         // Firewall action display
         if map.contains_key("allowed") {
-            map.insert("action_display".to_string(), Value::String("ALLOW".to_string()));
+            map.insert(
+                "action_display".to_string(),
+                Value::String("ALLOW".to_string()),
+            );
         } else if map.contains_key("denied") {
-            map.insert("action_display".to_string(), Value::String("DENY".to_string()));
+            map.insert(
+                "action_display".to_string(),
+                Value::String("DENY".to_string()),
+            );
         }
 
         // Format timestamps
@@ -201,16 +225,33 @@ fn post_process_item(mut item: Value, resource_def: &ResourceDef) -> Value {
         }
 
         // GKE specific
-        if let Some(autopilot) = map.get("autopilot").and_then(|v| v.get("enabled")).and_then(|v| v.as_bool()) {
+        if let Some(autopilot) = map
+            .get("autopilot")
+            .and_then(|v| v.get("enabled"))
+            .and_then(|v| v.as_bool())
+        {
             let display = if autopilot { "Autopilot" } else { "Standard" };
-            map.insert("autopilot_display".to_string(), Value::String(display.to_string()));
+            map.insert(
+                "autopilot_display".to_string(),
+                Value::String(display.to_string()),
+            );
         } else {
-            map.insert("autopilot_display".to_string(), Value::String("Standard".to_string()));
+            map.insert(
+                "autopilot_display".to_string(),
+                Value::String("Standard".to_string()),
+            );
         }
 
-        if let Some(autoscaling) = map.get("autoscaling").and_then(|v| v.get("enabled")).and_then(|v| v.as_bool()) {
+        if let Some(autoscaling) = map
+            .get("autoscaling")
+            .and_then(|v| v.get("enabled"))
+            .and_then(|v| v.as_bool())
+        {
             let display = if autoscaling { "Yes" } else { "No" };
-            map.insert("autoscaling_display".to_string(), Value::String(display.to_string()));
+            map.insert(
+                "autoscaling_display".to_string(),
+                Value::String(display.to_string()),
+            );
         }
     }
 

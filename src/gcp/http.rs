@@ -5,6 +5,7 @@ use reqwest::Client;
 use serde_json::Value;
 
 /// Base URLs for GCP services
+#[allow(dead_code)]
 pub mod base_urls {
     pub const COMPUTE: &str = "https://compute.googleapis.com/compute/v1";
     pub const STORAGE: &str = "https://storage.googleapis.com/storage/v1";
@@ -43,7 +44,10 @@ impl GcpHttpClient {
             .context("Failed to send request")?;
 
         let status = response.status();
-        let body = response.text().await.context("Failed to read response body")?;
+        let body = response
+            .text()
+            .await
+            .context("Failed to read response body")?;
 
         if !status.is_success() {
             tracing::error!("API error: {} - {}", status, body);
@@ -66,11 +70,18 @@ impl GcpHttpClient {
         let response = request.send().await.context("Failed to send request")?;
 
         let status = response.status();
-        let response_body = response.text().await.context("Failed to read response body")?;
+        let response_body = response
+            .text()
+            .await
+            .context("Failed to read response body")?;
 
         if !status.is_success() {
             tracing::error!("API error: {} - {}", status, response_body);
-            return Err(anyhow::anyhow!("API request failed: {} - {}", status, response_body));
+            return Err(anyhow::anyhow!(
+                "API request failed: {} - {}",
+                status,
+                response_body
+            ));
         }
 
         // Handle empty response
@@ -94,7 +105,10 @@ impl GcpHttpClient {
             .context("Failed to send request")?;
 
         let status = response.status();
-        let body = response.text().await.context("Failed to read response body")?;
+        let body = response
+            .text()
+            .await
+            .context("Failed to read response body")?;
 
         if !status.is_success() {
             tracing::error!("API error: {} - {}", status, body);

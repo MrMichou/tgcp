@@ -8,6 +8,7 @@ use serde_json::Value;
 
 /// Project information
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Project {
     pub project_id: String,
     pub name: String,

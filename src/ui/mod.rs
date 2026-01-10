@@ -3,8 +3,8 @@ mod dialog;
 mod header;
 mod help;
 mod projects;
-mod zones;
 pub mod splash;
+mod zones;
 
 use crate::app::{App, Mode};
 use crate::resource::{extract_json_value, get_color_for_value, ColumnDef};
@@ -36,16 +36,16 @@ pub fn render(f: &mut Frame, app: &App) {
     match app.mode {
         Mode::Projects => {
             projects::render(f, app, chunks[1]);
-        }
+        },
         Mode::Zones => {
             zones::render(f, app, chunks[1]);
-        }
+        },
         Mode::Describe => {
             render_describe_view(f, app, chunks[1]);
-        }
+        },
         _ => {
             render_main_content(f, app, chunks[1]);
-        }
+        },
     }
 
     // Footer/crumb
@@ -55,14 +55,14 @@ pub fn render(f: &mut Frame, app: &App) {
     match app.mode {
         Mode::Help => {
             help::render(f, app);
-        }
+        },
         Mode::Confirm | Mode::Warning => {
             dialog::render(f, app);
-        }
+        },
         Mode::Command => {
             command_box::render(f, app);
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }
 
@@ -250,7 +250,7 @@ fn render_describe_view(f: &mut Frame, app: &App, area: Rect) {
         .unwrap_or_else(|| "No item selected".to_string());
 
     // Apply JSON syntax highlighting
-    let lines: Vec<Line> = json.lines().map(|l| highlight_json_line(l)).collect();
+    let lines: Vec<Line> = json.lines().map(highlight_json_line).collect();
     let total_lines = lines.len();
 
     let title = if let Some(resource) = app.current_resource() {
@@ -327,7 +327,7 @@ fn highlight_json_line(line: &str) -> Line<'static> {
                     Style::default().fg(Color::Green)
                 };
                 spans.push(Span::styled(string_content, style));
-            }
+            },
             ':' => {
                 current.push(c);
                 spans.push(Span::styled(
@@ -336,7 +336,7 @@ fn highlight_json_line(line: &str) -> Line<'static> {
                 ));
                 current.clear();
                 is_key = false;
-            }
+            },
             ',' => {
                 if !current.is_empty() {
                     let style = get_json_value_style(&current);
@@ -348,7 +348,7 @@ fn highlight_json_line(line: &str) -> Line<'static> {
                     Style::default().fg(Color::White),
                 ));
                 is_key = true;
-            }
+            },
             '{' | '}' | '[' | ']' => {
                 if !current.is_empty() {
                     let style = get_json_value_style(&current);
@@ -362,7 +362,7 @@ fn highlight_json_line(line: &str) -> Line<'static> {
                 if c == '{' || c == '[' {
                     is_key = c == '{';
                 }
-            }
+            },
             ' ' | '\t' => {
                 if !current.is_empty() {
                     let style = get_json_value_style(&current);
@@ -370,10 +370,10 @@ fn highlight_json_line(line: &str) -> Line<'static> {
                     current.clear();
                 }
                 spans.push(Span::raw(c.to_string()));
-            }
+            },
             _ => {
                 current.push(c);
-            }
+            },
         }
     }
 

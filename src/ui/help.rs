@@ -25,9 +25,10 @@ pub fn render(f: &mut Frame, _app: &App) {
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Navigation", Style::default().add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Navigation",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         Line::from(vec![
             Span::styled("  j/k, ↑/↓    ", Style::default().fg(Color::Yellow)),
             Span::raw("Move up/down"),
@@ -49,9 +50,10 @@ pub fn render(f: &mut Frame, _app: &App) {
             Span::raw("Previous/next page"),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Views", Style::default().add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Views",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         Line::from(vec![
             Span::styled("  Enter/d     ", Style::default().fg(Color::Yellow)),
             Span::raw("View resource details"),
@@ -65,9 +67,10 @@ pub fn render(f: &mut Frame, _app: &App) {
             Span::raw("Refresh current view"),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Filtering", Style::default().add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Filtering",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         Line::from(vec![
             Span::styled("  /           ", Style::default().fg(Color::Yellow)),
             Span::raw("Start filtering"),
@@ -77,9 +80,10 @@ pub fn render(f: &mut Frame, _app: &App) {
             Span::raw("Clear filter"),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Commands", Style::default().add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Commands",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         Line::from(vec![
             Span::styled("  :           ", Style::default().fg(Color::Yellow)),
             Span::raw("Enter command mode"),
@@ -93,9 +97,10 @@ pub fn render(f: &mut Frame, _app: &App) {
             Span::raw("Switch zone"),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Actions", Style::default().add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Actions",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         Line::from(vec![
             Span::styled("  s           ", Style::default().fg(Color::Yellow)),
             Span::raw("Start instance"),

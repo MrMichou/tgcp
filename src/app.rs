@@ -240,14 +240,14 @@ impl App {
                 } else {
                     self.selected = 0;
                 }
-            }
+            },
             Err(e) => {
                 self.error_message = Some(crate::gcp::client::format_gcp_error(&e));
                 self.items.clear();
                 self.filtered_items.clear();
                 self.selected = 0;
                 self.pagination = PaginationState::default();
-            }
+            },
         }
 
         self.loading = false;
@@ -334,6 +334,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     pub fn toggle_filter(&mut self) {
         self.filter_active = !self.filter_active;
     }
@@ -378,18 +379,18 @@ impl App {
                     self.projects_selected =
                         (self.projects_selected + 1).min(self.available_projects.len() - 1);
                 }
-            }
+            },
             Mode::Zones => {
                 if !self.available_zones.is_empty() {
                     self.zones_selected =
                         (self.zones_selected + 1).min(self.available_zones.len() - 1);
                 }
-            }
+            },
             _ => {
                 if !self.filtered_items.is_empty() {
                     self.selected = (self.selected + 1).min(self.filtered_items.len() - 1);
                 }
-            }
+            },
         }
     }
 
@@ -397,13 +398,13 @@ impl App {
         match self.mode {
             Mode::Projects => {
                 self.projects_selected = self.projects_selected.saturating_sub(1);
-            }
+            },
             Mode::Zones => {
                 self.zones_selected = self.zones_selected.saturating_sub(1);
-            }
+            },
             _ => {
                 self.selected = self.selected.saturating_sub(1);
-            }
+            },
         }
     }
 
@@ -421,17 +422,17 @@ impl App {
                 if !self.available_projects.is_empty() {
                     self.projects_selected = self.available_projects.len() - 1;
                 }
-            }
+            },
             Mode::Zones => {
                 if !self.available_zones.is_empty() {
                     self.zones_selected = self.available_zones.len() - 1;
                 }
-            }
+            },
             _ => {
                 if !self.filtered_items.is_empty() {
                     self.selected = self.filtered_items.len() - 1;
                 }
-            }
+            },
         }
     }
 
@@ -442,19 +443,18 @@ impl App {
                     self.projects_selected =
                         (self.projects_selected + page_size).min(self.available_projects.len() - 1);
                 }
-            }
+            },
             Mode::Zones => {
                 if !self.available_zones.is_empty() {
                     self.zones_selected =
                         (self.zones_selected + page_size).min(self.available_zones.len() - 1);
                 }
-            }
+            },
             _ => {
                 if !self.filtered_items.is_empty() {
-                    self.selected =
-                        (self.selected + page_size).min(self.filtered_items.len() - 1);
+                    self.selected = (self.selected + page_size).min(self.filtered_items.len() - 1);
                 }
-            }
+            },
         }
     }
 
@@ -462,13 +462,13 @@ impl App {
         match self.mode {
             Mode::Projects => {
                 self.projects_selected = self.projects_selected.saturating_sub(page_size);
-            }
+            },
             Mode::Zones => {
                 self.zones_selected = self.zones_selected.saturating_sub(page_size);
-            }
+            },
             _ => {
                 self.selected = self.selected.saturating_sub(page_size);
-            }
+            },
         }
     }
 
@@ -807,21 +807,21 @@ impl App {
             "q" | "quit" => return Ok(true),
             "back" => {
                 self.navigate_back().await?;
-            }
+            },
             "projects" => {
                 self.enter_projects_mode();
-            }
+            },
             "zones" => {
                 self.enter_zones_mode();
-            }
+            },
             "zone" if parts.len() > 1 => {
                 self.switch_zone(parts[1]).await?;
                 self.refresh_current().await?;
-            }
+            },
             "project" if parts.len() > 1 => {
                 self.switch_project(parts[1]).await?;
                 self.refresh_current().await?;
-            }
+            },
             _ => {
                 if get_resource(cmd).is_some() {
                     if let Some(resource) = self.current_resource() {
@@ -837,7 +837,7 @@ impl App {
                 } else {
                     self.error_message = Some(format!("Unknown command: {}", cmd));
                 }
-            }
+            },
         }
 
         Ok(false)

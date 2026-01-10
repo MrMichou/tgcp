@@ -103,6 +103,7 @@ impl ActionDef {
 
 /// Resource definition from JSON
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct ResourceDef {
     pub display_name: String,
     pub service: String,
@@ -203,7 +204,10 @@ mod tests {
     #[test]
     fn test_compute_instances_resource_exists() {
         let resource = get_resource("compute-instances");
-        assert!(resource.is_some(), "Compute instances resource should exist");
+        assert!(
+            resource.is_some(),
+            "Compute instances resource should exist"
+        );
 
         let resource = resource.unwrap();
         assert_eq!(resource.display_name, "VM Instances");

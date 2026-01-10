@@ -28,12 +28,12 @@ struct CachedToken {
 impl GcpCredentials {
     /// Create new GCP credentials using Application Default Credentials
     pub async fn new() -> Result<Self> {
-        let provider = gcp_auth::provider()
-            .await
-            .context("Failed to initialize GCP authentication. Run 'gcloud auth application-default login'")?;
+        let provider = gcp_auth::provider().await.context(
+            "Failed to initialize GCP authentication. Run 'gcloud auth application-default login'",
+        )?;
 
         Ok(Self {
-            provider: Arc::from(provider),
+            provider,
             token_cache: Arc::new(RwLock::new(None)),
         })
     }
@@ -187,6 +187,7 @@ pub fn get_default_zone() -> Option<String> {
 }
 
 /// Get the default region from gcloud configuration
+#[allow(dead_code)]
 pub fn get_default_region() -> Option<String> {
     // Check environment variable first
     if let Ok(region) = std::env::var("CLOUDSDK_COMPUTE_REGION") {
@@ -301,6 +302,7 @@ pub fn list_zones() -> Vec<String> {
 }
 
 /// List all available regions (derived from zones)
+#[allow(dead_code)]
 pub fn list_regions() -> Vec<String> {
     let mut regions: Vec<String> = list_zones()
         .iter()

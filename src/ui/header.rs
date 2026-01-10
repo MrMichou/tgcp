@@ -50,9 +50,17 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
         Span::raw("  "),
         Span::styled("Zone: ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            if app.zone == "all" { "All zones" } else { &app.zone },
+            if app.zone == "all" {
+                "All zones"
+            } else {
+                &app.zone
+            },
             Style::default()
-                .fg(if app.zone == "all" { Color::Yellow } else { Color::Green })
+                .fg(if app.zone == "all" {
+                    Color::Yellow
+                } else {
+                    Color::Green
+                })
                 .add_modifier(Modifier::BOLD),
         ),
     ]);
@@ -101,11 +109,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
                     a.shortcut.as_ref().map(|s| {
                         Span::styled(
                             format!(" [{}]{} ", s, a.display_name),
-                            if a.confirm
-                                .as_ref()
-                                .map(|c| c.destructive)
-                                .unwrap_or(false)
-                            {
+                            if a.confirm.as_ref().map(|c| c.destructive).unwrap_or(false) {
                                 Style::default().fg(Color::Red)
                             } else {
                                 Style::default().fg(Color::DarkGray)
@@ -118,7 +122,10 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             if action_hints.is_empty() {
                 Line::from(Span::raw(""))
             } else {
-                let mut spans = vec![Span::styled(" Actions:", Style::default().fg(Color::DarkGray))];
+                let mut spans = vec![Span::styled(
+                    " Actions:",
+                    Style::default().fg(Color::DarkGray),
+                )];
                 spans.extend(action_hints);
                 Line::from(spans)
             }

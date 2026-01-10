@@ -64,7 +64,7 @@ impl Config {
         self.project_id
             .clone()
             .or_else(crate::gcp::auth::get_default_project)
-            .unwrap_or_else(|| "".to_string())
+            .unwrap_or_default()
     }
 
     /// Get effective zone (CLI > config > gcloud default)

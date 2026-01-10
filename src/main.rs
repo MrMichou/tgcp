@@ -75,9 +75,7 @@ impl LogLevel {
 }
 
 fn setup_logging(level: LogLevel) -> Option<tracing_appender::non_blocking::WorkerGuard> {
-    let Some(tracing_level) = level.to_tracing_level() else {
-        return None;
-    };
+    let tracing_level = level.to_tracing_level()?;
 
     let log_path = get_log_path();
 
@@ -143,14 +141,14 @@ async fn main() -> Result<()> {
             if let Err(err) = run_result {
                 eprintln!("Error: {err:?}");
             }
-        }
+        },
         Ok(None) => {
             cleanup_terminal(&mut terminal)?;
-        }
+        },
         Err(err) => {
             cleanup_terminal(&mut terminal)?;
             eprintln!("Initialization error: {err:?}");
-        }
+        },
     }
 
     Ok(())
@@ -232,15 +230,15 @@ where
         Ok(projects) if !projects.is_empty() => {
             tracing::info!("Loaded {} projects", projects.len());
             projects
-        }
+        },
         Ok(_) => {
             tracing::warn!("No projects returned, using current project only");
             vec![project.clone()]
-        }
+        },
         Err(e) => {
             tracing::warn!("Failed to list projects: {}, using current project only", e);
             vec![project.clone()]
-        }
+        },
     };
 
     splash.complete_step();
@@ -260,19 +258,19 @@ where
             let mut all_zones = vec!["all".to_string()];
             all_zones.extend(zones);
             all_zones
-        }
+        },
         Ok(_) => {
             tracing::warn!("No zones returned, using static list");
             let mut all_zones = vec!["all".to_string()];
             all_zones.extend(auth::list_zones());
             all_zones
-        }
+        },
         Err(e) => {
             tracing::warn!("Failed to list zones: {}, using static list", e);
             let mut all_zones = vec!["all".to_string()];
             all_zones.extend(auth::list_zones());
             all_zones
-        }
+        },
     };
 
     splash.complete_step();
@@ -291,7 +289,7 @@ where
             Err(e) => {
                 let error_msg = gcp::client::format_gcp_error(&e);
                 (Vec::new(), Some(error_msg))
-            }
+            },
         }
     };
 

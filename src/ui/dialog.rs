@@ -15,7 +15,7 @@ pub fn render(f: &mut Frame, app: &App) {
     match app.mode {
         Mode::Confirm => render_confirm_dialog(f, app),
         Mode::Warning => render_warning_dialog(f, app),
-        _ => {}
+        _ => {},
     }
 }
 
@@ -132,7 +132,10 @@ fn render_warning_dialog(f: &mut Frame, app: &App) {
 
     let content = vec![
         Line::from(""),
-        Line::from(Span::styled(message.as_str(), Style::default().fg(Color::White))),
+        Line::from(Span::styled(
+            message.as_str(),
+            Style::default().fg(Color::White),
+        )),
         Line::from(""),
         Line::from(Span::styled(
             "Press Enter or Esc to close",
