@@ -13,7 +13,7 @@ use ratatui::{
 
 pub fn render(f: &mut Frame, _app: &App) {
     let area = f.area();
-    let popup_area = centered_rect(70, 80, area);
+    let popup_area = centered_rect(75, 85, area);
 
     f.render_widget(Clear, popup_area);
 
@@ -25,105 +25,133 @@ pub fn render(f: &mut Frame, _app: &App) {
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
+        // Navigation section
         Line::from(vec![Span::styled(
             "Navigation",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![
-            Span::styled("  j/k, ↑/↓    ", Style::default().fg(Color::Yellow)),
+            Span::styled("  ↑/↓ or j/k      ", Style::default().fg(Color::Yellow)),
             Span::raw("Move up/down"),
         ]),
         Line::from(vec![
-            Span::styled("  gg          ", Style::default().fg(Color::Yellow)),
+            Span::styled("  Home or gg      ", Style::default().fg(Color::Yellow)),
             Span::raw("Go to top"),
         ]),
         Line::from(vec![
-            Span::styled("  G           ", Style::default().fg(Color::Yellow)),
+            Span::styled("  End or G        ", Style::default().fg(Color::Yellow)),
             Span::raw("Go to bottom"),
         ]),
         Line::from(vec![
-            Span::styled("  Ctrl+d/u    ", Style::default().fg(Color::Yellow)),
-            Span::raw("Page down/up"),
+            Span::styled("  PgUp/PgDn       ", Style::default().fg(Color::Yellow)),
+            Span::raw("Page up/down (or Ctrl+u/d)"),
         ]),
         Line::from(vec![
-            Span::styled("  [/]         ", Style::default().fg(Color::Yellow)),
-            Span::raw("Previous/next page"),
+            Span::styled("  1-9             ", Style::default().fg(Color::Yellow)),
+            Span::raw("Jump to item 1-9"),
+        ]),
+        Line::from(vec![
+            Span::styled("  [/]             ", Style::default().fg(Color::Yellow)),
+            Span::raw("Previous/next API page"),
         ]),
         Line::from(""),
+        // Sorting section
+        Line::from(vec![Span::styled(
+            "Sorting",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::styled("  F1-F6           ", Style::default().fg(Color::Yellow)),
+            Span::raw("Sort by column 1-6 (toggle direction)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  F12             ", Style::default().fg(Color::Yellow)),
+            Span::raw("Clear sort"),
+        ]),
+        Line::from(""),
+        // Views section
         Line::from(vec![Span::styled(
             "Views",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![
-            Span::styled("  Enter/d     ", Style::default().fg(Color::Yellow)),
-            Span::raw("View resource details"),
+            Span::styled("  Enter or d      ", Style::default().fg(Color::Yellow)),
+            Span::raw("View resource details (JSON)"),
         ]),
         Line::from(vec![
-            Span::styled("  b/Backspace ", Style::default().fg(Color::Yellow)),
+            Span::styled("  ← or Backspace  ", Style::default().fg(Color::Yellow)),
             Span::raw("Go back"),
         ]),
         Line::from(vec![
-            Span::styled("  R           ", Style::default().fg(Color::Yellow)),
+            Span::styled("  R               ", Style::default().fg(Color::Yellow)),
             Span::raw("Refresh current view"),
         ]),
         Line::from(""),
+        // Filtering section
         Line::from(vec![Span::styled(
             "Filtering",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![
-            Span::styled("  /           ", Style::default().fg(Color::Yellow)),
-            Span::raw("Start filtering"),
+            Span::styled("  /               ", Style::default().fg(Color::Yellow)),
+            Span::raw("Start filtering (searches all columns)"),
         ]),
         Line::from(vec![
-            Span::styled("  Esc         ", Style::default().fg(Color::Yellow)),
+            Span::styled("  Esc             ", Style::default().fg(Color::Yellow)),
             Span::raw("Clear filter"),
         ]),
         Line::from(""),
+        // Selectors section
         Line::from(vec![Span::styled(
-            "Commands",
+            "Selectors",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![
-            Span::styled("  :           ", Style::default().fg(Color::Yellow)),
-            Span::raw("Enter command mode"),
+            Span::styled("  p               ", Style::default().fg(Color::Yellow)),
+            Span::raw("Switch project (type to search)"),
         ]),
         Line::from(vec![
-            Span::styled("  p           ", Style::default().fg(Color::Yellow)),
-            Span::raw("Switch project"),
+            Span::styled("  z               ", Style::default().fg(Color::Yellow)),
+            Span::raw("Switch zone (type to search)"),
         ]),
         Line::from(vec![
-            Span::styled("  z           ", Style::default().fg(Color::Yellow)),
-            Span::raw("Switch zone"),
+            Span::styled("  :               ", Style::default().fg(Color::Yellow)),
+            Span::raw("Command mode (type resource name)"),
         ]),
         Line::from(""),
+        // Actions section
         Line::from(vec![Span::styled(
-            "Actions",
+            "Actions (VM Instances)",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![
-            Span::styled("  s           ", Style::default().fg(Color::Yellow)),
+            Span::styled("  s               ", Style::default().fg(Color::Yellow)),
             Span::raw("Start instance"),
         ]),
         Line::from(vec![
-            Span::styled("  S           ", Style::default().fg(Color::Yellow)),
+            Span::styled("  S               ", Style::default().fg(Color::Yellow)),
             Span::raw("Stop instance"),
         ]),
         Line::from(vec![
-            Span::styled("  r           ", Style::default().fg(Color::Yellow)),
+            Span::styled("  r               ", Style::default().fg(Color::Yellow)),
             Span::raw("Reset instance"),
         ]),
         Line::from(vec![
-            Span::styled("  Ctrl+d      ", Style::default().fg(Color::Red)),
+            Span::styled("  Delete          ", Style::default().fg(Color::Red)),
             Span::raw("Delete resource (destructive)"),
         ]),
         Line::from(""),
+        // General section
+        Line::from(vec![Span::styled(
+            "General",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         Line::from(vec![
-            Span::styled("  ?/Esc       ", Style::default().fg(Color::Yellow)),
-            Span::raw("Close help"),
+            Span::styled("  ?               ", Style::default().fg(Color::Yellow)),
+            Span::raw("Toggle help"),
         ]),
         Line::from(vec![
-            Span::styled("  q           ", Style::default().fg(Color::Yellow)),
+            Span::styled("  q               ", Style::default().fg(Color::Yellow)),
             Span::raw("Quit application"),
         ]),
     ];

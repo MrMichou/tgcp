@@ -90,6 +90,15 @@ pub struct App {
     pub available_zones: Vec<String>,
     pub projects_selected: usize,
     pub zones_selected: usize,
+    // Search in selectors
+    pub projects_search_text: String,
+    pub projects_filtered: Vec<String>,
+    pub zones_search_text: String,
+    pub zones_filtered: Vec<String>,
+
+    // Sorting
+    pub sort_column: Option<usize>,
+    pub sort_ascending: bool,
 
     // Confirmation
     pub pending_action: Option<PendingAction>,
@@ -151,10 +160,16 @@ impl App {
             command_preview: None,
             project,
             zone,
-            available_projects,
-            available_zones,
+            available_projects: available_projects.clone(),
+            available_zones: available_zones.clone(),
             projects_selected: 0,
             zones_selected: 0,
+            projects_search_text: String::new(),
+            projects_filtered: available_projects,
+            zones_search_text: String::new(),
+            zones_filtered: available_zones,
+            sort_column: None,
+            sort_ascending: true,
             pending_action: None,
             loading: false,
             error_message: None,
@@ -318,9 +333,11 @@ impl App {
                 .iter()
                 .filter(|item| {
                     if let Some(res) = resource {
-                        let name = extract_json_value(item, &res.name_field).to_lowercase();
-                        let id = extract_json_value(item, &res.id_field).to_lowercase();
-                        name.contains(&filter) || id.contains(&filter)
+                        // Search ALL columns, not just name/id
+                        res.columns.iter().any(|col| {
+                            let value = extract_json_value(item, &col.json_path).to_lowercase();
+                            value.contains(&filter)
+                        })
                     } else {
                         item.to_string().to_lowercase().contains(&filter)
                     }
@@ -331,6 +348,11 @@ impl App {
 
         if self.selected >= self.filtered_items.len() && !self.filtered_items.is_empty() {
             self.selected = self.filtered_items.len() - 1;
+        }
+
+        // Re-apply sort if active
+        if self.sort_column.is_some() {
+            self.apply_sort();
         }
     }
 
@@ -375,15 +397,15 @@ impl App {
     pub fn next(&mut self) {
         match self.mode {
             Mode::Projects => {
-                if !self.available_projects.is_empty() {
+                if !self.projects_filtered.is_empty() {
                     self.projects_selected =
-                        (self.projects_selected + 1).min(self.available_projects.len() - 1);
+                        (self.projects_selected + 1).min(self.projects_filtered.len() - 1);
                 }
             },
             Mode::Zones => {
-                if !self.available_zones.is_empty() {
+                if !self.zones_filtered.is_empty() {
                     self.zones_selected =
-                        (self.zones_selected + 1).min(self.available_zones.len() - 1);
+                        (self.zones_selected + 1).min(self.zones_filtered.len() - 1);
                 }
             },
             _ => {
@@ -419,13 +441,13 @@ impl App {
     pub fn go_to_bottom(&mut self) {
         match self.mode {
             Mode::Projects => {
-                if !self.available_projects.is_empty() {
-                    self.projects_selected = self.available_projects.len() - 1;
+                if !self.projects_filtered.is_empty() {
+                    self.projects_selected = self.projects_filtered.len() - 1;
                 }
             },
             Mode::Zones => {
-                if !self.available_zones.is_empty() {
-                    self.zones_selected = self.available_zones.len() - 1;
+                if !self.zones_filtered.is_empty() {
+                    self.zones_selected = self.zones_filtered.len() - 1;
                 }
             },
             _ => {
@@ -439,15 +461,15 @@ impl App {
     pub fn page_down(&mut self, page_size: usize) {
         match self.mode {
             Mode::Projects => {
-                if !self.available_projects.is_empty() {
+                if !self.projects_filtered.is_empty() {
                     self.projects_selected =
-                        (self.projects_selected + page_size).min(self.available_projects.len() - 1);
+                        (self.projects_selected + page_size).min(self.projects_filtered.len() - 1);
                 }
             },
             Mode::Zones => {
-                if !self.available_zones.is_empty() {
+                if !self.zones_filtered.is_empty() {
                     self.zones_selected =
-                        (self.zones_selected + page_size).min(self.available_zones.len() - 1);
+                        (self.zones_selected + page_size).min(self.zones_filtered.len() - 1);
                 }
             },
             _ => {
@@ -607,8 +629,10 @@ impl App {
     }
 
     pub fn enter_projects_mode(&mut self) {
+        self.projects_search_text.clear();
+        self.projects_filtered = self.available_projects.clone();
         self.projects_selected = self
-            .available_projects
+            .projects_filtered
             .iter()
             .position(|p| p == &self.project)
             .unwrap_or(0);
@@ -616,12 +640,111 @@ impl App {
     }
 
     pub fn enter_zones_mode(&mut self) {
+        self.zones_search_text.clear();
+        self.zones_filtered = self.available_zones.clone();
         self.zones_selected = self
-            .available_zones
+            .zones_filtered
             .iter()
             .position(|z| z == &self.zone)
             .unwrap_or(0);
         self.mode = Mode::Zones;
+    }
+
+    // =========================================================================
+    // Selector Filtering
+    // =========================================================================
+
+    pub fn apply_projects_filter(&mut self) {
+        let filter = self.projects_search_text.to_lowercase();
+        if filter.is_empty() {
+            self.projects_filtered = self.available_projects.clone();
+        } else {
+            self.projects_filtered = self
+                .available_projects
+                .iter()
+                .filter(|p| p.to_lowercase().contains(&filter))
+                .cloned()
+                .collect();
+        }
+        // Reset selection if out of bounds
+        if self.projects_selected >= self.projects_filtered.len() {
+            self.projects_selected = 0;
+        }
+    }
+
+    pub fn apply_zones_filter(&mut self) {
+        let filter = self.zones_search_text.to_lowercase();
+        if filter.is_empty() {
+            self.zones_filtered = self.available_zones.clone();
+        } else {
+            self.zones_filtered = self
+                .available_zones
+                .iter()
+                .filter(|z| z.to_lowercase().contains(&filter))
+                .cloned()
+                .collect();
+        }
+        // Reset selection if out of bounds
+        if self.zones_selected >= self.zones_filtered.len() {
+            self.zones_selected = 0;
+        }
+    }
+
+    // =========================================================================
+    // Sorting
+    // =========================================================================
+
+    pub fn sort_by_column(&mut self, column_index: usize) {
+        if let Some(current) = self.sort_column {
+            if current == column_index {
+                // Toggle direction
+                self.sort_ascending = !self.sort_ascending;
+            } else {
+                self.sort_column = Some(column_index);
+                self.sort_ascending = true;
+            }
+        } else {
+            self.sort_column = Some(column_index);
+            self.sort_ascending = true;
+        }
+        self.apply_sort();
+    }
+
+    pub fn apply_sort(&mut self) {
+        let Some(col_idx) = self.sort_column else {
+            return;
+        };
+        let Some(resource) = self.current_resource() else {
+            return;
+        };
+        let Some(column) = resource.columns.get(col_idx) else {
+            return;
+        };
+
+        let json_path = column.json_path.clone();
+        let ascending = self.sort_ascending;
+
+        self.filtered_items.sort_by(|a, b| {
+            let val_a = extract_json_value(a, &json_path);
+            let val_b = extract_json_value(b, &json_path);
+
+            // Try numeric comparison first
+            let cmp = match (val_a.parse::<f64>(), val_b.parse::<f64>()) {
+                (Ok(na), Ok(nb)) => na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal),
+                _ => val_a.cmp(&val_b),
+            };
+
+            if ascending {
+                cmp
+            } else {
+                cmp.reverse()
+            }
+        });
+    }
+
+    pub fn clear_sort(&mut self) {
+        self.sort_column = None;
+        self.apply_filter(); // Re-apply filter to restore original order
     }
 
     pub fn exit_mode(&mut self) {
@@ -759,7 +882,7 @@ impl App {
     }
 
     pub async fn select_project(&mut self) -> Result<()> {
-        if let Some(project) = self.available_projects.get(self.projects_selected) {
+        if let Some(project) = self.projects_filtered.get(self.projects_selected) {
             let project = project.clone();
             self.switch_project(&project).await?;
             self.refresh_current().await?;
@@ -769,7 +892,7 @@ impl App {
     }
 
     pub async fn select_zone(&mut self) -> Result<()> {
-        if let Some(zone) = self.available_zones.get(self.zones_selected) {
+        if let Some(zone) = self.zones_filtered.get(self.zones_selected) {
             let zone = zone.clone();
             self.switch_zone(&zone).await?;
             self.refresh_current().await?;

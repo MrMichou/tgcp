@@ -37,10 +37,10 @@ async fn handle_key_event(app: &mut App, code: KeyCode, modifiers: KeyModifiers)
 }
 
 async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
-    // Check for double-g (go to top)
+    // Check for double-g (go to top) - keep for vim users but increase timeout
     if code == KeyCode::Char('g') {
         if let Some((KeyCode::Char('g'), time)) = app.last_key_press {
-            if time.elapsed() < Duration::from_millis(500) {
+            if time.elapsed() < Duration::from_millis(1000) {
                 app.go_to_top();
                 app.last_key_press = None;
                 return Ok(false);
@@ -79,10 +79,11 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         // Quit
         KeyCode::Char('q') => return Ok(true),
 
-        // Navigation
+        // Navigation - vim style + accessible alternatives
         KeyCode::Char('j') | KeyCode::Down => app.next(),
         KeyCode::Char('k') | KeyCode::Up => app.previous(),
-        KeyCode::Char('G') => app.go_to_bottom(),
+        KeyCode::Home => app.go_to_top(),
+        KeyCode::End | KeyCode::Char('G') => app.go_to_bottom(),
         KeyCode::PageDown => app.page_down(10),
         KeyCode::PageUp => app.page_up(10),
 
@@ -92,6 +93,23 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         },
         KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
             app.page_up(10);
+        },
+
+        // Quick jump to position 1-9
+        KeyCode::Char(c @ '1'..='9') if !app.filter_active => {
+            let idx = c.to_digit(10).unwrap() as usize - 1;
+            if idx < app.filtered_items.len() {
+                app.selected = idx;
+            }
+        },
+
+        // Sorting with F1-F6
+        KeyCode::F(n @ 1..=6) => {
+            app.sort_by_column((n - 1) as usize);
+        },
+        // Clear sort with F12
+        KeyCode::F(12) => {
+            app.clear_sort();
         },
 
         // Pagination
@@ -105,6 +123,7 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         // Refresh
         KeyCode::Char('R') => {
             app.reset_pagination();
+            app.sort_column = None; // Reset sort on refresh
             app.refresh_current().await?;
         },
 
@@ -132,7 +151,7 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         },
 
         // Back navigation
-        KeyCode::Backspace => {
+        KeyCode::Backspace | KeyCode::Left => {
             if app.parent_context.is_some() {
                 app.navigate_back().await?;
             }
@@ -151,6 +170,21 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         // Zones
         KeyCode::Char('z') => {
             app.enter_zones_mode();
+        },
+
+        // Delete action with Delete key (resolves Ctrl+D conflict)
+        KeyCode::Delete => {
+            if let Some(resource) = app.current_resource() {
+                // Find delete action (usually has "delete" in sdk_method)
+                let delete_action = resource
+                    .actions
+                    .iter()
+                    .find(|a| a.sdk_method.to_lowercase().contains("delete"));
+
+                if let Some(action_def) = delete_action {
+                    handle_action(app, action_def).await?;
+                }
+            }
         },
 
         // Sub-resource and action shortcuts
@@ -347,10 +381,10 @@ fn handle_warning_mode(app: &mut App, code: KeyCode) -> Result<bool> {
 async fn handle_projects_mode(
     app: &mut App,
     code: KeyCode,
-    _modifiers: KeyModifiers,
+    modifiers: KeyModifiers,
 ) -> Result<bool> {
     match code {
-        KeyCode::Esc | KeyCode::Char('q') => {
+        KeyCode::Esc => {
             app.exit_mode();
         },
         KeyCode::Enter => {
@@ -362,20 +396,38 @@ async fn handle_projects_mode(
         KeyCode::Char('k') | KeyCode::Up => {
             app.previous();
         },
-        KeyCode::Char('g') => {
+        KeyCode::Home => {
             app.go_to_top();
         },
-        KeyCode::Char('G') => {
+        KeyCode::End | KeyCode::Char('G') => {
             app.go_to_bottom();
+        },
+        KeyCode::PageDown => {
+            app.page_down(10);
+        },
+        KeyCode::PageUp => {
+            app.page_up(10);
+        },
+        KeyCode::Backspace => {
+            app.projects_search_text.pop();
+            app.apply_projects_filter();
+        },
+        KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => {
+            app.projects_search_text.push(c);
+            app.apply_projects_filter();
         },
         _ => {},
     }
     Ok(false)
 }
 
-async fn handle_zones_mode(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Result<bool> {
+async fn handle_zones_mode(
+    app: &mut App,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> Result<bool> {
     match code {
-        KeyCode::Esc | KeyCode::Char('q') => {
+        KeyCode::Esc => {
             app.exit_mode();
         },
         KeyCode::Enter => {
@@ -387,11 +439,25 @@ async fn handle_zones_mode(app: &mut App, code: KeyCode, _modifiers: KeyModifier
         KeyCode::Char('k') | KeyCode::Up => {
             app.previous();
         },
-        KeyCode::Char('g') => {
+        KeyCode::Home => {
             app.go_to_top();
         },
-        KeyCode::Char('G') => {
+        KeyCode::End | KeyCode::Char('G') => {
             app.go_to_bottom();
+        },
+        KeyCode::PageDown => {
+            app.page_down(10);
+        },
+        KeyCode::PageUp => {
+            app.page_up(10);
+        },
+        KeyCode::Backspace => {
+            app.zones_search_text.pop();
+            app.apply_zones_filter();
+        },
+        KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => {
+            app.zones_search_text.push(c);
+            app.apply_zones_filter();
         },
         _ => {},
     }
@@ -400,7 +466,7 @@ async fn handle_zones_mode(app: &mut App, code: KeyCode, _modifiers: KeyModifier
 
 fn handle_describe_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
     match code {
-        KeyCode::Esc | KeyCode::Char('q') => {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Backspace => {
             app.exit_mode();
         },
         KeyCode::Char('j') | KeyCode::Down => {
@@ -408,6 +474,12 @@ fn handle_describe_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -
         },
         KeyCode::Char('k') | KeyCode::Up => {
             app.describe_scroll = app.describe_scroll.saturating_sub(1);
+        },
+        KeyCode::PageDown => {
+            app.describe_scroll = app.describe_scroll.saturating_add(10);
+        },
+        KeyCode::PageUp => {
+            app.describe_scroll = app.describe_scroll.saturating_sub(10);
         },
         KeyCode::Char('d') => {
             if modifiers.contains(KeyModifiers::CONTROL) {
@@ -419,10 +491,10 @@ fn handle_describe_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -
         KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
             app.describe_scroll = app.describe_scroll.saturating_sub(10);
         },
-        KeyCode::Char('g') => {
+        KeyCode::Char('g') | KeyCode::Home => {
             app.describe_scroll = 0;
         },
-        KeyCode::Char('G') => {
+        KeyCode::Char('G') | KeyCode::End => {
             app.describe_scroll_to_bottom(30); // Approximate visible lines
         },
         _ => {},
