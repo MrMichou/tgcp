@@ -255,6 +255,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-- Based on [taws](https://github.com/davisp/taws) - Terminal UI for AWS
+- Based on [taws](https://github.com/huseyinbabal/taws) - Terminal UI for AWS
 - Inspired by [k9s](https://k9scli.io/) for Kubernetes
 - Built with the excellent [ratatui](https://ratatui.rs/) TUI framework

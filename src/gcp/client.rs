@@ -149,6 +149,23 @@ impl GcpClient {
     }
 
     // =========================================================================
+    // Cloud Billing API helpers
+    // =========================================================================
+
+    /// Build Cloud Billing API URL
+    pub fn billing_url(&self, path: &str) -> String {
+        format!("https://cloudbilling.googleapis.com/v1/{}", path)
+    }
+
+    /// Build Cloud Billing Budget API URL for a billing account
+    pub fn billing_budgets_url(&self, billing_account: &str, path: &str) -> String {
+        format!(
+            "https://billingbudgets.googleapis.com/v1/{}/{}",
+            billing_account, path
+        )
+    }
+
+    // =========================================================================
     // Resource Manager API helpers
     // =========================================================================
 

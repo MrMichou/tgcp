@@ -15,6 +15,7 @@ const RESOURCE_FILES: &[&str] = &[
     include_str!("../resources/storage.json"),
     include_str!("../resources/gke.json"),
     include_str!("../resources/cdn.json"),
+    include_str!("../resources/billing.json"),
 ];
 
 /// Color definition from JSON

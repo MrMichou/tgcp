@@ -1,0 +1,82 @@
+{
+  "color_maps": {
+    "billing_status": [
+      { "value": "OPEN", "color": [0, 255, 0] },
+      { "value": "CLOSED", "color": [128, 128, 128] }
+    ],
+    "budget_status": [
+      { "value": "OK", "color": [0, 255, 0] },
+      { "value": "WARNING", "color": [255, 255, 0] },
+      { "value": "ALERT", "color": [255, 165, 0] },
+      { "value": "EXCEEDED", "color": [255, 0, 0] }
+    ]
+  },
+  "resources": {
+    "billing-accounts": {
+      "display_name": "Billing Accounts",
+      "service": "billing",
+      "sdk_method": "list_billing_accounts",
+      "sdk_method_params": {},
+      "response_path": "billingAccounts",
+      "id_field": "name",
+      "name_field": "displayName",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "displayName", "width": 30 },
+        { "header": "ID", "json_path": "name_short", "width": 22 },
+        { "header": "STATUS", "json_path": "open_display", "width": 10, "color_map": "billing_status" },
+        { "header": "MASTER ACCOUNT", "json_path": "masterBillingAccount_short", "width": 22 }
+      ],
+      "sub_resources": [
+        {
+          "resource_key": "billing-budgets",
+          "display_name": "Budgets",
+          "shortcut": "b",
+          "parent_id_field": "name",
+          "filter_param": "billingAccount"
+        }
+      ],
+      "actions": []
+    },
+    "billing-budgets": {
+      "display_name": "Budgets",
+      "service": "billing",
+      "sdk_method": "list_budgets",
+      "sdk_method_params": {},
+      "response_path": "budgets",
+      "id_field": "name",
+      "name_field": "displayName",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "NAME", "json_path": "displayName", "width": 25 },
+        { "header": "AMOUNT", "json_path": "amount_display", "width": 15 },
+        { "header": "SPENT", "json_path": "spent_display", "width": 15 },
+        { "header": "% USED", "json_path": "percent_display", "width": 10 },
+        { "header": "STATUS", "json_path": "budget_status", "width": 10, "color_map": "budget_status" },
+        { "header": "ALERTS", "json_path": "thresholdRules_count", "width": 8 }
+      ],
+      "sub_resources": [],
+      "actions": []
+    },
+    "billing-project-info": {
+      "display_name": "Project Billing Info",
+      "service": "billing",
+      "sdk_method": "get_project_billing_info",
+      "sdk_method_params": {},
+      "response_path": "_self",
+      "id_field": "name",
+      "name_field": "projectId",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "PROJECT", "json_path": "projectId", "width": 30 },
+        { "header": "BILLING ENABLED", "json_path": "billingEnabled", "width": 18, "color_map": "bool" },
+        { "header": "BILLING ACCOUNT", "json_path": "billingAccountName_short", "width": 25 }
+      ],
+      "sub_resources": [],
+      "actions": []
+    }
+  }
+}
