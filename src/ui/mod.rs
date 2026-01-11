@@ -164,9 +164,26 @@ fn render_dynamic_table(f: &mut Frame, app: &App, area: Rect) {
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
-    // Build header from column definitions with left padding
-    let header_cells = resource.columns.iter().map(|col| {
-        Cell::from(format!(" {}", col.header)).style(
+    // Build header from column definitions with left padding and sort indicators
+    let header_cells = resource.columns.iter().enumerate().map(|(idx, col)| {
+        // Add sort indicator if this column is sorted
+        let sort_indicator = if app.sort_column == Some(idx) {
+            if app.sort_ascending {
+                " ▲"
+            } else {
+                " ▼"
+            }
+        } else {
+            ""
+        };
+
+        let header_text = if app.sort_column == Some(idx) {
+            format!(" {}{}", col.header, sort_indicator)
+        } else {
+            format!(" {}", col.header)
+        };
+
+        Cell::from(header_text).style(
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),

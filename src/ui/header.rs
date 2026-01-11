@@ -137,22 +137,43 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     };
     f.render_widget(Paragraph::new(actions_line), rows[2]);
 
-    // Row 4: Help hint
-    let help_line = Line::from(vec![
-        Span::styled(
-            " ?:help  ::cmd  /:filter  p:projects  z:zones  q:quit",
-            Style::default().fg(Color::DarkGray),
-        ),
-        if app.readonly {
-            Span::styled(
-                "  [READ-ONLY]",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )
-        } else {
-            Span::raw("")
-        },
-    ]);
+    // Row 4: Help hint - more accessible with clear labels
+    let mut help_spans = vec![
+        Span::styled(" ?", Style::default().fg(Color::Yellow)),
+        Span::styled(":help ", Style::default().fg(Color::DarkGray)),
+        Span::styled("↑↓", Style::default().fg(Color::Yellow)),
+        Span::styled(":nav ", Style::default().fg(Color::DarkGray)),
+        Span::styled("/", Style::default().fg(Color::Yellow)),
+        Span::styled(":filter ", Style::default().fg(Color::DarkGray)),
+        Span::styled("p", Style::default().fg(Color::Yellow)),
+        Span::styled(":proj ", Style::default().fg(Color::DarkGray)),
+        Span::styled("z", Style::default().fg(Color::Yellow)),
+        Span::styled(":zone ", Style::default().fg(Color::DarkGray)),
+        Span::styled("F1-F6", Style::default().fg(Color::Yellow)),
+        Span::styled(":sort ", Style::default().fg(Color::DarkGray)),
+    ];
+
+    // Add sort indicator if active
+    if let Some(col) = app.sort_column {
+        help_spans.push(Span::styled(
+            format!(
+                "[sorted:col{}{}]",
+                col + 1,
+                if app.sort_ascending { "↑" } else { "↓" }
+            ),
+            Style::default().fg(Color::Cyan),
+        ));
+    }
+
+    if app.readonly {
+        help_spans.push(Span::styled(
+            " [READ-ONLY]",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    let help_line = Line::from(help_spans);
     f.render_widget(Paragraph::new(help_line), rows[3]);
 }

@@ -1,13 +1,13 @@
 //! Zones Selector
 //!
-//! Zone selection overlay.
+//! Zone selection overlay with search functionality.
 
 use crate::app::App;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::Span,
-    widgets::{Block, Borders, Clear, List, ListItem, ListState},
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
@@ -15,11 +15,18 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let popup_area = centered_rect(50, 80, area);
     f.render_widget(Clear, popup_area);
 
+    // Title with count
+    let title = format!(
+        " Select Zone [{}/{}] ",
+        app.zones_filtered.len(),
+        app.available_zones.len()
+    );
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green))
         .title(Span::styled(
-            " Select Zone ",
+            title,
             Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
@@ -29,8 +36,52 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
 
+    // Split inner into: search box, help text, separator, list
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Search input
+            Constraint::Length(1), // Help text
+            Constraint::Length(1), // Separator
+            Constraint::Min(1),    // Zone list
+        ])
+        .split(inner);
+
+    // Search input with cursor
+    let search_line = Line::from(vec![
+        Span::styled(" / ", Style::default().fg(Color::Yellow)),
+        Span::styled(&app.zones_search_text, Style::default().fg(Color::White)),
+        Span::styled("_", Style::default().fg(Color::Yellow)),
+    ]);
+    f.render_widget(
+        Paragraph::new(search_line).style(Style::default()),
+        chunks[0],
+    );
+
+    // Help text
+    let help = Line::from(vec![
+        Span::styled(" Type", Style::default().fg(Color::DarkGray)),
+        Span::styled(" to search", Style::default().fg(Color::DarkGray)),
+        Span::styled(" | ", Style::default().fg(Color::DarkGray)),
+        Span::styled("↑↓", Style::default().fg(Color::Yellow)),
+        Span::styled(":nav ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Enter", Style::default().fg(Color::Yellow)),
+        Span::styled(":select ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Esc", Style::default().fg(Color::Yellow)),
+        Span::styled(":cancel", Style::default().fg(Color::DarkGray)),
+    ]);
+    f.render_widget(Paragraph::new(help), chunks[1]);
+
+    // Separator line
+    let sep = "─".repeat(chunks[2].width as usize);
+    f.render_widget(
+        Paragraph::new(sep).style(Style::default().fg(Color::DarkGray)),
+        chunks[2],
+    );
+
+    // Filtered zone list
     let items: Vec<ListItem> = app
-        .available_zones
+        .zones_filtered
         .iter()
         .map(|zone| {
             let style = if zone == &app.zone {
@@ -44,10 +95,13 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 Style::default().fg(Color::White)
             };
+
+            // Mark current zone with checkmark, special display for "all"
+            let prefix = if zone == &app.zone { "✓ " } else { "  " };
             let display_name = if zone == "all" {
-                "  ★ All zones".to_string()
+                format!("{}★ All zones", prefix)
             } else {
-                format!("  {}", zone)
+                format!("{}{}", prefix, zone)
             };
             ListItem::new(Span::styled(display_name, style))
         })
@@ -62,7 +116,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     let mut state = ListState::default();
     state.select(Some(app.zones_selected));
 
-    f.render_stateful_widget(list, inner, &mut state);
+    f.render_stateful_widget(list, chunks[3], &mut state);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
