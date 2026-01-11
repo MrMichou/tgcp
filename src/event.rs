@@ -421,11 +421,7 @@ async fn handle_projects_mode(
     Ok(false)
 }
 
-async fn handle_zones_mode(
-    app: &mut App,
-    code: KeyCode,
-    modifiers: KeyModifiers,
-) -> Result<bool> {
+async fn handle_zones_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
     match code {
         KeyCode::Esc => {
             app.exit_mode();

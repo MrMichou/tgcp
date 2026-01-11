@@ -407,7 +407,7 @@ async fn invoke_billing(method: &str, client: &GcpClient, params: &Value) -> Res
             let response = client.get(&url).await?;
             // Add computed fields for display
             Ok(enrich_billing_accounts(response))
-        }
+        },
         "list_budgets" => {
             // List budgets for a billing account
             let billing_account = get_param_str(params, "billingAccount")?;
@@ -416,14 +416,14 @@ async fn invoke_billing(method: &str, client: &GcpClient, params: &Value) -> Res
             let response = client.get(&url).await?;
             // Add computed fields for display
             Ok(enrich_budgets(response))
-        }
+        },
         "get_project_billing_info" => {
             // Get billing info for the current project
             let url = client.billing_url(&format!("projects/{}/billingInfo", client.project_id));
             let response = client.get(&url).await?;
             // Wrap in array for consistent handling
             Ok(enrich_project_billing_info(response))
-        }
+        },
         _ => Err(anyhow::anyhow!("Unknown billing method: {}", method)),
     }
 }
@@ -440,7 +440,10 @@ async fn execute_billing_action(
 
 /// Enrich billing accounts with computed display fields
 fn enrich_billing_accounts(mut response: Value) -> Value {
-    if let Some(accounts) = response.get_mut("billingAccounts").and_then(|v| v.as_array_mut()) {
+    if let Some(accounts) = response
+        .get_mut("billingAccounts")
+        .and_then(|v| v.as_array_mut())
+    {
         for account in accounts {
             if let Some(obj) = account.as_object_mut() {
                 // name_short: "billingAccounts/XXXXX-XXXXX-XXXXX" -> "XXXXX-XXXXX-XXXXX"
@@ -452,7 +455,10 @@ fn enrich_billing_accounts(mut response: Value) -> Value {
                 // open_display: true -> "OPEN", false -> "CLOSED"
                 if let Some(open) = obj.get("open").and_then(|v| v.as_bool()) {
                     let status = if open { "OPEN" } else { "CLOSED" };
-                    obj.insert("open_display".to_string(), Value::String(status.to_string()));
+                    obj.insert(
+                        "open_display".to_string(),
+                        Value::String(status.to_string()),
+                    );
                 }
 
                 // masterBillingAccount_short
@@ -489,20 +495,14 @@ fn enrich_budgets(mut response: Value) -> Value {
                 // Parse current spend (from etag or we need to handle differently)
                 // Note: The Budget API doesn't directly return current spend in the list response
                 // We'll show the budget amount and threshold rules for now
-                obj.insert(
-                    "spent_display".to_string(),
-                    Value::String("-".to_string()),
-                );
+                obj.insert("spent_display".to_string(), Value::String("-".to_string()));
                 obj.insert(
                     "percent_display".to_string(),
                     Value::String("-".to_string()),
                 );
 
                 // Budget status based on threshold rules
-                obj.insert(
-                    "budget_status".to_string(),
-                    Value::String("OK".to_string()),
-                );
+                obj.insert("budget_status".to_string(), Value::String("OK".to_string()));
 
                 // Count threshold rules
                 let rules_count = obj
@@ -569,10 +569,7 @@ fn parse_money(money: &Value) -> f64 {
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(0.0);
 
-    let nanos = money
-        .get("nanos")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0) as f64;
+    let nanos = money.get("nanos").and_then(|v| v.as_i64()).unwrap_or(0) as f64;
 
     units + (nanos / 1_000_000_000.0)
 }
