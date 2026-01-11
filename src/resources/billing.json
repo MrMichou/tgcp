@@ -77,6 +77,52 @@
       ],
       "sub_resources": [],
       "actions": []
+    },
+    "billing-services": {
+      "display_name": "GCP Services (Pricing)",
+      "service": "billing",
+      "sdk_method": "list_services",
+      "sdk_method_params": {},
+      "response_path": "services",
+      "id_field": "serviceId",
+      "name_field": "displayName",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "SERVICE", "json_path": "displayName", "width": 40 },
+        { "header": "SERVICE ID", "json_path": "serviceId", "width": 20 },
+        { "header": "ENTITY", "json_path": "businessEntityName_short", "width": 15 }
+      ],
+      "sub_resources": [
+        {
+          "resource_key": "billing-skus",
+          "display_name": "SKUs (Prices)",
+          "shortcut": "s",
+          "parent_id_field": "name",
+          "filter_param": "parent"
+        }
+      ],
+      "actions": []
+    },
+    "billing-skus": {
+      "display_name": "SKUs (Prices)",
+      "service": "billing",
+      "sdk_method": "list_skus",
+      "sdk_method_params": {},
+      "response_path": "skus",
+      "id_field": "skuId",
+      "name_field": "description",
+      "is_global": true,
+      "is_regional": false,
+      "columns": [
+        { "header": "DESCRIPTION", "json_path": "description", "width": 45 },
+        { "header": "PRICE", "json_path": "price_display", "width": 15 },
+        { "header": "UNIT", "json_path": "usage_unit", "width": 10 },
+        { "header": "CATEGORY", "json_path": "category.resourceFamily", "width": 15 },
+        { "header": "USAGE TYPE", "json_path": "category.usageType", "width": 12 }
+      ],
+      "sub_resources": [],
+      "actions": []
     }
   }
 }
