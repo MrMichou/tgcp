@@ -672,8 +672,6 @@ fn extract_sku_price(sku: &serde_json::Map<String, Value>) -> (String, String) {
                     "Free".to_string()
                 } else if amount < 0.0001 {
                     format!("${:.6}", amount)
-                } else if amount < 0.01 {
-                    format!("${:.4}", amount)
                 } else {
                     format!("${:.4}", amount)
                 }
