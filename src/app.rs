@@ -8,6 +8,7 @@ use crate::resource::{
     extract_json_value, fetch_resources_paginated, get_all_resource_keys, get_resource,
     ResourceDef, ResourceFilter,
 };
+use crate::theme::{Theme, ThemeManager};
 use anyhow::Result;
 use crossterm::event::KeyCode;
 use serde_json::Value;
@@ -126,6 +127,9 @@ pub struct App {
 
     // Pagination
     pub pagination: PaginationState,
+
+    // Theme
+    pub theme_manager: ThemeManager,
 }
 
 impl App {
@@ -142,6 +146,13 @@ impl App {
         readonly: bool,
     ) -> Self {
         let filtered_items = initial_items.clone();
+
+        // Initialize theme manager and apply project-specific theme
+        let mut theme_manager = ThemeManager::load();
+
+        // Apply theme from config or project-specific setting
+        let theme_name = config.effective_theme(&project);
+        theme_manager.set_theme(&theme_name);
 
         Self {
             client,
@@ -181,7 +192,14 @@ impl App {
             readonly,
             warning_message: None,
             pagination: PaginationState::default(),
+            theme_manager,
         }
+    }
+
+    /// Get current theme (for future UI theming)
+    #[allow(dead_code)]
+    pub fn theme(&self) -> &Theme {
+        self.theme_manager.current()
     }
 
     /// Check if auto-refresh is needed (disabled)
@@ -208,8 +226,22 @@ impl App {
             .map(|s| s.to_string())
             .collect();
 
+        // Add built-in commands
         commands.push("projects".to_string());
         commands.push("zones".to_string());
+
+        // Add theme commands
+        commands.push("theme".to_string());
+        for theme in ThemeManager::list_available() {
+            commands.push(format!("theme {}", theme));
+        }
+
+        // Add aliases
+        for alias in self.config.aliases.keys() {
+            if !commands.contains(alias) {
+                commands.push(alias.clone());
+            }
+        }
 
         commands.sort();
         commands
@@ -878,6 +910,10 @@ impl App {
             tracing::warn!("Failed to save project to config: {}", e);
         }
 
+        // Apply project-specific theme if configured
+        let theme_name = self.config.effective_theme(project);
+        self.theme_manager.set_theme(&theme_name);
+
         Ok(())
     }
 
@@ -945,17 +981,55 @@ impl App {
                 self.switch_project(parts[1]).await?;
                 self.refresh_current().await?;
             },
-            _ => {
-                if get_resource(cmd).is_some() {
-                    if let Some(resource) = self.current_resource() {
-                        let is_sub = resource.sub_resources.iter().any(|s| s.resource_key == cmd);
-                        if is_sub && self.selected_item().is_some() {
-                            self.navigate_to_sub_resource(cmd).await?;
-                        } else {
-                            self.navigate_to_resource(cmd).await?;
+            "theme" => {
+                if parts.len() > 1 {
+                    let theme_name = parts[1];
+                    if self.theme_manager.set_theme(theme_name) {
+                        if let Err(e) = self.config.set_theme(theme_name) {
+                            tracing::warn!("Failed to save theme to config: {}", e);
                         }
                     } else {
-                        self.navigate_to_resource(cmd).await?;
+                        self.error_message = Some(format!("Unknown theme: {}", theme_name));
+                    }
+                } else {
+                    // Show available themes
+                    let themes = ThemeManager::list_available().join(", ");
+                    self.error_message = Some(format!("Available themes: {}", themes));
+                }
+            },
+            "alias" if parts.len() >= 3 => {
+                // :alias <alias> <resource_key>
+                let alias = parts[1];
+                let resource_key = parts[2];
+                if get_resource(resource_key).is_some() {
+                    if let Err(e) = self.config.add_alias(alias, resource_key) {
+                        self.error_message = Some(format!("Failed to save alias: {}", e));
+                    }
+                } else {
+                    self.error_message = Some(format!("Unknown resource: {}", resource_key));
+                }
+            },
+            _ => {
+                // Check for alias first - clone to avoid borrow issues
+                let resolved_cmd = self
+                    .config
+                    .resolve_alias(cmd)
+                    .cloned()
+                    .unwrap_or_else(|| cmd.to_string());
+
+                if get_resource(&resolved_cmd).is_some() {
+                    if let Some(resource) = self.current_resource() {
+                        let is_sub = resource
+                            .sub_resources
+                            .iter()
+                            .any(|s| s.resource_key == resolved_cmd);
+                        if is_sub && self.selected_item().is_some() {
+                            self.navigate_to_sub_resource(&resolved_cmd).await?;
+                        } else {
+                            self.navigate_to_resource(&resolved_cmd).await?;
+                        }
+                    } else {
+                        self.navigate_to_resource(&resolved_cmd).await?;
                     }
                 } else {
                     self.error_message = Some(format!("Unknown command: {}", cmd));

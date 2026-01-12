@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// User configuration
@@ -18,6 +19,29 @@ pub struct Config {
     /// Last viewed resource
     #[serde(default)]
     pub last_resource: Option<String>,
+    /// Theme name
+    #[serde(default)]
+    pub theme: Option<String>,
+    /// Project-specific themes (project_id -> theme_name)
+    #[serde(default)]
+    pub project_themes: HashMap<String, String>,
+    /// Custom aliases (alias -> resource_key)
+    #[serde(default)]
+    pub aliases: HashMap<String, String>,
+    /// SSH options
+    #[serde(default)]
+    pub ssh: SshConfig,
+}
+
+/// SSH configuration options
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SshConfig {
+    /// Always use IAP tunneling
+    #[serde(default)]
+    pub use_iap: bool,
+    /// Extra arguments to pass to gcloud compute ssh
+    #[serde(default)]
+    pub extra_args: Vec<String>,
 }
 
 impl Config {
@@ -85,5 +109,41 @@ impl Config {
     pub fn set_zone(&mut self, zone: &str) -> Result<()> {
         self.zone = Some(zone.to_string());
         self.save()
+    }
+
+    /// Set theme and save
+    pub fn set_theme(&mut self, theme: &str) -> Result<()> {
+        self.theme = Some(theme.to_string());
+        self.save()
+    }
+
+    /// Get theme for current project (or default)
+    pub fn effective_theme(&self, project_id: &str) -> String {
+        // Check project-specific theme first
+        if let Some(theme) = self.project_themes.get(project_id) {
+            return theme.clone();
+        }
+        // Fall back to default theme
+        self.theme.clone().unwrap_or_else(|| "default".to_string())
+    }
+
+    /// Set project-specific theme (for future :theme-project command)
+    #[allow(dead_code)]
+    pub fn set_project_theme(&mut self, project_id: &str, theme: &str) -> Result<()> {
+        self.project_themes
+            .insert(project_id.to_string(), theme.to_string());
+        self.save()
+    }
+
+    /// Add alias
+    pub fn add_alias(&mut self, alias: &str, resource_key: &str) -> Result<()> {
+        self.aliases
+            .insert(alias.to_string(), resource_key.to_string());
+        self.save()
+    }
+
+    /// Resolve alias to resource key
+    pub fn resolve_alias(&self, alias: &str) -> Option<&String> {
+        self.aliases.get(alias)
     }
 }

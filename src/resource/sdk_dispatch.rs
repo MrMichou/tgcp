@@ -424,6 +424,21 @@ async fn invoke_billing(method: &str, client: &GcpClient, params: &Value) -> Res
             // Wrap in array for consistent handling
             Ok(enrich_project_billing_info(response))
         },
+        "list_services" => {
+            // List all GCP services with pricing info
+            let url = client.billing_url("services");
+            let url = add_query_params(&url, params);
+            let response = client.get(&url).await?;
+            Ok(enrich_services(response))
+        },
+        "list_skus" => {
+            // List SKUs (prices) for a service
+            let parent = get_param_str(params, "parent")?;
+            let url = client.billing_url(&format!("{}/skus", parent));
+            let url = add_query_params(&url, params);
+            let response = client.get(&url).await?;
+            Ok(enrich_skus(response))
+        },
         _ => Err(anyhow::anyhow!("Unknown billing method: {}", method)),
     }
 }
@@ -585,6 +600,92 @@ fn format_currency(amount: f64) -> String {
     } else {
         format!("${:.2}", amount)
     }
+}
+
+/// Enrich services with computed display fields
+fn enrich_services(mut response: Value) -> Value {
+    if let Some(services) = response.get_mut("services").and_then(|v| v.as_array_mut()) {
+        for service in services {
+            if let Some(obj) = service.as_object_mut() {
+                // businessEntityName_short: "businessEntities/GCP" -> "GCP"
+                if let Some(entity) = obj.get("businessEntityName").and_then(|v| v.as_str()) {
+                    let short = entity.strip_prefix("businessEntities/").unwrap_or(entity);
+                    obj.insert(
+                        "businessEntityName_short".to_string(),
+                        Value::String(short.to_string()),
+                    );
+                }
+            }
+        }
+    }
+    response
+}
+
+/// Enrich SKUs with computed display fields (prices)
+fn enrich_skus(mut response: Value) -> Value {
+    if let Some(skus) = response.get_mut("skus").and_then(|v| v.as_array_mut()) {
+        for sku in skus {
+            if let Some(obj) = sku.as_object_mut() {
+                // Extract price from pricingInfo
+                let (price, unit) = extract_sku_price(obj);
+                obj.insert("price_display".to_string(), Value::String(price));
+                obj.insert("usage_unit".to_string(), Value::String(unit));
+            }
+        }
+    }
+    response
+}
+
+/// Extract price and unit from SKU pricing info
+fn extract_sku_price(sku: &serde_json::Map<String, Value>) -> (String, String) {
+    let pricing_info = sku.get("pricingInfo").and_then(|v| v.as_array());
+
+    let Some(pricing_info) = pricing_info else {
+        return ("-".to_string(), "-".to_string());
+    };
+
+    let Some(first_pricing) = pricing_info.first() else {
+        return ("-".to_string(), "-".to_string());
+    };
+
+    let pricing_expr = first_pricing.get("pricingExpression");
+
+    let Some(pricing_expr) = pricing_expr else {
+        return ("-".to_string(), "-".to_string());
+    };
+
+    // Get usage unit
+    let unit = pricing_expr
+        .get("usageUnit")
+        .and_then(|v| v.as_str())
+        .unwrap_or("-")
+        .to_string();
+
+    // Get price from tiered rates
+    let tiered_rates = pricing_expr.get("tieredRates").and_then(|v| v.as_array());
+
+    let price = if let Some(rates) = tiered_rates {
+        if let Some(first_rate) = rates.first() {
+            if let Some(unit_price) = first_rate.get("unitPrice") {
+                let amount = parse_money(unit_price);
+                if amount == 0.0 {
+                    "Free".to_string()
+                } else if amount < 0.0001 {
+                    format!("${:.6}", amount)
+                } else {
+                    format!("${:.4}", amount)
+                }
+            } else {
+                "-".to_string()
+            }
+        } else {
+            "-".to_string()
+        }
+    } else {
+        "-".to_string()
+    };
+
+    (price, unit)
 }
 
 // =============================================================================

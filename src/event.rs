@@ -4,6 +4,7 @@
 
 use crate::app::{App, Mode};
 use crate::resource::{execute_action, extract_json_value};
+use crate::shell::{self, ShellResult, SshOptions};
 use anyhow::Result;
 use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
 use std::time::Duration;
@@ -224,12 +225,13 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
 }
 
 async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -> Result<()> {
-    if app.readonly {
+    // Shell actions don't respect readonly mode (they don't modify resources)
+    if app.readonly && !action_def.shell_action {
         app.show_warning("Read-only mode: actions are disabled");
         return Ok(());
     }
 
-    let Some(item) = app.selected_item() else {
+    let Some(item) = app.selected_item().cloned() else {
         return Ok(());
     };
 
@@ -238,9 +240,14 @@ async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -
     };
 
     // Get resource ID (use name for GCP resources)
-    let resource_id = extract_json_value(item, &resource.name_field);
+    let resource_id = extract_json_value(&item, &resource.name_field);
     if resource_id == "-" {
         return Ok(());
+    }
+
+    // Handle shell actions (SSH, console, etc.)
+    if action_def.shell_action {
+        return handle_shell_action(app, action_def, &resource_id, &item).await;
     }
 
     if action_def.requires_confirm() {
@@ -266,6 +273,104 @@ async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -
                 app.error_message = Some(crate::gcp::client::format_gcp_error(&e));
             },
         }
+    }
+
+    Ok(())
+}
+
+/// Handle shell actions like SSH, console URL, etc.
+async fn handle_shell_action(
+    app: &mut App,
+    action_def: &crate::resource::ActionDef,
+    resource_id: &str,
+    item: &serde_json::Value,
+) -> Result<()> {
+    let method = action_def.sdk_method.as_str();
+
+    match method {
+        "ssh_instance" => {
+            // Get zone from the instance if available
+            let zone = extract_json_value(item, "zone_short");
+            let zone = if zone != "-" { zone } else { app.zone.clone() };
+
+            let mut opts = SshOptions::new(resource_id, &zone, &app.project);
+
+            // Apply config settings
+            if app.config.ssh.use_iap {
+                opts = opts.with_iap();
+            }
+            opts.extra_args = app.config.ssh.extra_args.clone();
+
+            // Execute SSH with terminal handling
+            let result = shell::execute_with_terminal_handling(|| shell::ssh_to_instance(&opts));
+
+            match result {
+                Ok(ShellResult::Success) => {
+                    tracing::info!("SSH session completed successfully");
+                },
+                Ok(ShellResult::Failed(code)) => {
+                    app.error_message = Some(format!("SSH exited with code {}", code));
+                },
+                Ok(ShellResult::Error(msg)) => {
+                    app.error_message = Some(msg);
+                },
+                Ok(ShellResult::Interrupted) => {
+                    tracing::info!("SSH session interrupted");
+                },
+                Err(e) => {
+                    app.error_message = Some(format!("SSH error: {}", e));
+                },
+            }
+        },
+        "ssh_instance_iap" => {
+            let zone = extract_json_value(item, "zone_short");
+            let zone = if zone != "-" { zone } else { app.zone.clone() };
+
+            let mut opts = SshOptions::new(resource_id, &zone, &app.project).with_iap();
+            opts.extra_args = app.config.ssh.extra_args.clone();
+
+            let result = shell::execute_with_terminal_handling(|| shell::ssh_to_instance(&opts));
+
+            match result {
+                Ok(ShellResult::Success) => {
+                    tracing::info!("SSH (IAP) session completed successfully");
+                },
+                Ok(ShellResult::Failed(code)) => {
+                    app.error_message = Some(format!("SSH (IAP) exited with code {}", code));
+                },
+                Ok(ShellResult::Error(msg)) => {
+                    app.error_message = Some(msg);
+                },
+                Ok(ShellResult::Interrupted) => {
+                    tracing::info!("SSH (IAP) session interrupted");
+                },
+                Err(e) => {
+                    app.error_message = Some(format!("SSH (IAP) error: {}", e));
+                },
+            }
+        },
+        "open_console" => {
+            let zone = extract_json_value(item, "zone_short");
+            let zone = if zone != "-" { zone } else { app.zone.clone() };
+
+            let url =
+                shell::console_url(&app.current_resource_key, resource_id, &app.project, &zone);
+
+            let result = shell::open_browser(&url);
+
+            match result {
+                ShellResult::Success => {
+                    tracing::info!("Opened console URL: {}", url);
+                },
+                ShellResult::Error(msg) => {
+                    app.error_message = Some(format!("Failed to open browser: {}", msg));
+                },
+                _ => {},
+            }
+        },
+        _ => {
+            app.error_message = Some(format!("Unknown shell action: {}", method));
+        },
     }
 
     Ok(())

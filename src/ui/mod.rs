@@ -252,10 +252,12 @@ fn format_cell_value(value: &str, col: &ColumnDef) -> String {
     value.to_string()
 }
 
-/// Truncate string for display
+/// Truncate string for display (Unicode-safe)
 fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() > max_len {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+    let char_count = s.chars().count();
+    if char_count > max_len {
+        let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
+        format!("{}...", truncated)
     } else {
         s.to_string()
     }
