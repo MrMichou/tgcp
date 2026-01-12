@@ -306,7 +306,8 @@ impl Default for Theme {
 }
 
 impl Theme {
-    /// Convert Rgb to ratatui Color
+    /// Convert Rgb to ratatui Color (for future UI theming)
+    #[allow(dead_code)]
     pub fn rgb_to_color(rgb: Rgb) -> Color {
         Color::Rgb(rgb[0], rgb[1], rgb[2])
     }
@@ -596,7 +597,8 @@ impl Theme {
         Ok(theme)
     }
 
-    /// Save theme to file
+    /// Save theme to file (for future theme export)
+    #[allow(dead_code)]
     pub fn save_to_file(&self, path: &PathBuf) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -669,7 +671,8 @@ impl ThemeManager {
         manager
     }
 
-    /// Get current theme
+    /// Get current theme (used by App::theme())
+    #[allow(dead_code)]
     pub fn current(&self) -> &Theme {
         &self.current
     }
@@ -695,11 +698,13 @@ impl ThemeManager {
     }
 
     /// Get theme for a specific project (if configured)
+    #[allow(dead_code)]
     pub fn get_project_theme(&self, project_id: &str) -> Option<&str> {
         self.project_themes.get(project_id).map(|s| s.as_str())
     }
 
     /// Apply project-specific theme if configured
+    #[allow(dead_code)]
     pub fn apply_project_theme(&mut self, project_id: &str) {
         if let Some(theme_name) = self.project_themes.get(project_id).cloned() {
             self.set_theme(&theme_name);

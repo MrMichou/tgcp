@@ -127,7 +127,8 @@ impl Config {
         self.theme.clone().unwrap_or_else(|| "default".to_string())
     }
 
-    /// Set project-specific theme
+    /// Set project-specific theme (for future :theme-project command)
+    #[allow(dead_code)]
     pub fn set_project_theme(&mut self, project_id: &str, theme: &str) -> Result<()> {
         self.project_themes
             .insert(project_id.to_string(), theme.to_string());

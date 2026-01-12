@@ -44,7 +44,8 @@ pub enum ShellResult {
     Success,
     /// Command failed with exit code
     Failed(i32),
-    /// Command was interrupted
+    /// Command was interrupted (for future use)
+    #[allow(dead_code)]
     Interrupted,
     /// Error launching command
     Error(String),
@@ -75,7 +76,8 @@ pub fn ssh_to_instance(opts: &SshOptions) -> ShellResult {
     execute_command("gcloud", &args)
 }
 
-/// Execute serial console connection
+/// Execute serial console connection (for future use)
+#[allow(dead_code)]
 pub fn serial_console(instance: &str, zone: &str, project: &str, port: u8) -> ShellResult {
     let args = vec![
         "compute".to_string(),
@@ -94,7 +96,8 @@ pub fn serial_console(instance: &str, zone: &str, project: &str, port: u8) -> Sh
     execute_command("gcloud", &args)
 }
 
-/// Execute kubectl exec into a pod
+/// Execute kubectl exec into a pod (for future GKE exec support)
+#[allow(dead_code)]
 pub fn kubectl_exec(
     pod: &str,
     namespace: &str,

@@ -196,7 +196,8 @@ impl App {
         }
     }
 
-    /// Get current theme
+    /// Get current theme (for future UI theming)
+    #[allow(dead_code)]
     pub fn theme(&self) -> &Theme {
         self.theme_manager.current()
     }
