@@ -32,8 +32,11 @@ A fast, keyboard-driven terminal interface for navigating and managing Google Cl
 - **Multi-resource support** - VMs, disks, networks, buckets, GKE clusters
 - **Hierarchical browsing** - Navigate from VMs to disks, buckets to objects
 - **Resource actions** - Start, stop, reset, delete with confirmation dialogs
+- **SSH integration** - Connect to VMs with `x`, IAP tunneling with `X`
+- **Theme system** - 7 built-in themes with per-project support
 - **Real-time filtering** - Instant search across resource lists
 - **Project/zone switching** - Quick context changes without leaving the app
+- **Command aliases** - Create shortcuts for frequently used resources
 - **Read-only mode** - Safe exploration with `--readonly` flag
 - **All-zones view** - See resources across all zones at once
 - **JSON detail view** - Full resource inspection with `d` key
@@ -104,6 +107,9 @@ cargo install --path .
 | `s` | Start instance |
 | `S` | Stop instance |
 | `r` | Reset instance |
+| `x` | SSH to instance |
+| `X` | SSH via IAP tunnel |
+| `C` | Open in GCP Console |
 | `Ctrl+d` | Delete resource (with confirmation) |
 | `R` | Refresh current view |
 
@@ -128,6 +134,8 @@ cargo install --path .
 | `:clusters` | Go to GKE clusters |
 | `:zone us-west1-a` | Switch zone |
 | `:project my-proj` | Switch project |
+| `:theme <name>` | Switch theme (see Themes section) |
+| `:alias <name> <resource>` | Create resource alias |
 | `:q` | Quit |
 
 ## Supported Resources
@@ -161,6 +169,28 @@ cargo install --path .
 - **Security Policies** - View, delete (Cloud Armor WAF/DDoS)
 - **Network Endpoint Groups** - View, delete (NEGs)
 
+## Themes
+
+tgcp includes 7 built-in themes:
+
+| Theme | Description |
+|-------|-------------|
+| `default` | Clean, balanced colors |
+| `dracula` | Dark purple-pink theme |
+| `monokai` | Classic code editor colors |
+| `nord` | Arctic blue-grey palette |
+| `gruvbox` | Retro warm colors |
+| `solarized` | Low-contrast precision |
+| `production` | High-contrast red for prod awareness |
+
+Switch themes with `:theme <name>`:
+```
+:theme dracula
+:theme production
+```
+
+Themes are saved per-project, so you can use a bright theme for dev and `production` for prod environments.
+
 ## Configuration
 
 Configuration is stored at `~/.config/tgcp/config.json`:
@@ -169,7 +199,20 @@ Configuration is stored at `~/.config/tgcp/config.json`:
 {
   "project_id": "my-project",
   "zone": "us-central1-a",
-  "last_resource": "compute-instances"
+  "last_resource": "compute-instances",
+  "theme": "default",
+  "project_themes": {
+    "prod-project": "production",
+    "dev-project": "dracula"
+  },
+  "aliases": {
+    "vms": "compute-instances",
+    "lb": "cdn-backend-services"
+  },
+  "ssh": {
+    "use_iap": false,
+    "extra_args": []
+  }
 }
 ```
 
