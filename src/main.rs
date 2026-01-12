@@ -3,6 +3,8 @@ mod config;
 mod event;
 mod gcp;
 mod resource;
+mod shell;
+mod theme;
 mod ui;
 
 /// Version injected at compile time via TGCP_VERSION env var (set by CI/CD),

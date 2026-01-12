@@ -137,8 +137,34 @@ pub fn render(f: &mut Frame, _app: &App) {
             Span::raw("Reset instance"),
         ]),
         Line::from(vec![
+            Span::styled("  x               ", Style::default().fg(Color::Green)),
+            Span::raw("SSH to instance"),
+        ]),
+        Line::from(vec![
+            Span::styled("  X               ", Style::default().fg(Color::Green)),
+            Span::raw("SSH via IAP tunnel"),
+        ]),
+        Line::from(vec![
+            Span::styled("  C               ", Style::default().fg(Color::Green)),
+            Span::raw("Open in GCP Console"),
+        ]),
+        Line::from(vec![
             Span::styled("  Delete          ", Style::default().fg(Color::Red)),
             Span::raw("Delete resource (destructive)"),
+        ]),
+        Line::from(""),
+        // Commands section
+        Line::from(vec![Span::styled(
+            "Commands (:)",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::styled("  :theme <name>   ", Style::default().fg(Color::Yellow)),
+            Span::raw("Switch theme (dracula, monokai, nord...)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  :alias a b      ", Style::default().fg(Color::Yellow)),
+            Span::raw("Create alias 'a' for resource 'b'"),
         ]),
         Line::from(""),
         // General section

@@ -42,6 +42,10 @@ src/
 │   ├── compute.json  # Compute Engine resources
 │   ├── storage.json  # Cloud Storage resources
 │   └── gke.json      # GKE resources
+├── shell/            # Shell integration (SSH, exec)
+│   └── mod.rs        # SSH, serial console, browser launch
+├── theme/            # Theme system
+│   └── mod.rs        # Theme definitions and manager
 └── ui/               # UI rendering
     ├── mod.rs        # Main render function
     ├── splash.rs     # Startup splash screen
@@ -112,7 +116,20 @@ cargo run -- --log-level debug
 | `s` | Start instance |
 | `S` | Stop instance |
 | `r` | Reset instance |
+| `x` | SSH to instance |
+| `X` | SSH via IAP tunnel |
+| `C` | Open in GCP Console |
 | `Ctrl+d` | Delete (destructive) |
+
+### Commands (`:` mode)
+
+| Command | Action |
+|---------|--------|
+| `:theme <name>` | Switch theme (dracula, monokai, nord, gruvbox, solarized, production) |
+| `:alias <alias> <resource>` | Create command alias |
+| `:<resource>` | Navigate to resource type |
+| `:projects` | Open project selector |
+| `:zones` | Open zone selector |
 
 ## Adding New GCP Resources
 
@@ -161,6 +178,104 @@ Configuration is stored at:
 
 Logs are stored at:
 - Linux/macOS: `~/.config/tgcp/tgcp.log`
+
+### Config File Format
+```json
+{
+  "project_id": "my-project",
+  "zone": "us-central1-a",
+  "theme": "dracula",
+  "project_themes": {
+    "production-project": "production",
+    "dev-project": "default"
+  },
+  "aliases": {
+    "vm": "compute-instances",
+    "disk": "compute-disks",
+    "fw": "compute-firewalls"
+  },
+  "ssh": {
+    "use_iap": false,
+    "extra_args": ["-o", "StrictHostKeyChecking=no"]
+  }
+}
+```
+
+## Themes
+
+tgcp supports customizable themes, including per-project themes (useful for distinguishing production from dev environments).
+
+### Built-in Themes
+- `default` - Standard dark theme
+- `dracula` - Popular dark theme with purple accents
+- `monokai` - Classic code editor theme
+- `nord` - Arctic color palette
+- `gruvbox` - Retro groove theme
+- `solarized` - Solarized dark
+- `production` - Red-tinted theme to warn about production environments
+
+### Switching Themes
+```
+# Via command mode
+:theme dracula
+
+# Via environment variable
+TGCP_THEME=monokai tgcp
+```
+
+### Custom Themes
+Place custom theme files in `~/.config/tgcp/skins/<name>.yaml`:
+```yaml
+name: my-theme
+base:
+  background: [30, 30, 30]
+  foreground: [220, 220, 220]
+  accent: [100, 200, 255]
+table:
+  header: [255, 200, 100]
+  selected_bg: [60, 60, 60]
+status:
+  running: [100, 255, 100]
+  stopped: [128, 128, 128]
+```
+
+### Per-Project Themes
+Configure different themes for different projects in `config.json`:
+```json
+{
+  "project_themes": {
+    "my-prod-project": "production",
+    "my-dev-project": "dracula"
+  }
+}
+```
+When switching to a project, its theme is automatically applied.
+
+## SSH Integration
+
+tgcp can SSH directly into VM instances without leaving the TUI.
+
+### SSH Keys
+- `x` - SSH to selected instance (uses `gcloud compute ssh`)
+- `X` - SSH via IAP tunnel (for instances without external IP)
+- `C` - Open instance in GCP Console browser
+
+### SSH Configuration
+In `~/.config/tgcp/config.json`:
+```json
+{
+  "ssh": {
+    "use_iap": true,
+    "extra_args": ["-o", "StrictHostKeyChecking=no"]
+  }
+}
+```
+
+### How it works
+1. tgcp suspends the TUI
+2. Runs `gcloud compute ssh <instance> --zone <zone> --project <project>`
+3. User interacts with SSH session
+4. When SSH exits, tgcp resumes
 
 ## Code Conventions
 

@@ -31,7 +31,10 @@
         { "key": "s", "display_name": "Start", "shortcut": "s", "sdk_method": "start_instance" },
         { "key": "S", "display_name": "Stop", "shortcut": "S", "sdk_method": "stop_instance", "confirm": { "message": "Stop instance", "default_yes": false } },
         { "key": "r", "display_name": "Reset", "shortcut": "r", "sdk_method": "reset_instance", "confirm": { "message": "Reset instance", "default_yes": false } },
-        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_instance", "confirm": { "message": "Delete instance", "default_yes": false, "destructive": true } }
+        { "key": "ctrl+d", "display_name": "Delete", "shortcut": "ctrl+d", "sdk_method": "delete_instance", "confirm": { "message": "Delete instance", "default_yes": false, "destructive": true } },
+        { "key": "x", "display_name": "SSH", "shortcut": "x", "sdk_method": "ssh_instance", "shell_action": true },
+        { "key": "X", "display_name": "SSH (IAP)", "shortcut": "X", "sdk_method": "ssh_instance_iap", "shell_action": true },
+        { "key": "C", "display_name": "Console", "shortcut": "C", "sdk_method": "open_console", "shell_action": true }
       ]
     },
     "compute-disks": {

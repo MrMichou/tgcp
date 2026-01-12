@@ -79,6 +79,9 @@ pub struct ActionDef {
     /// Confirmation configuration
     #[serde(default)]
     pub confirm: Option<ConfirmConfig>,
+    /// If true, this action is a shell command (SSH, exec, etc.)
+    #[serde(default)]
+    pub shell_action: bool,
 }
 
 impl ActionDef {
