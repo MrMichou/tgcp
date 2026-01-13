@@ -8,12 +8,8 @@ use serde_json::Value;
 
 /// Project information
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Project {
     pub project_id: String,
-    pub name: String,
-    pub project_number: String,
-    pub lifecycle_state: String,
 }
 
 impl From<&Value> for Project {
@@ -23,21 +19,6 @@ impl From<&Value> for Project {
                 .get("projectId")
                 .and_then(|v| v.as_str())
                 .unwrap_or("-")
-                .to_string(),
-            name: value
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("-")
-                .to_string(),
-            project_number: value
-                .get("projectNumber")
-                .and_then(|v| v.as_str())
-                .unwrap_or("-")
-                .to_string(),
-            lifecycle_state: value
-                .get("lifecycleState")
-                .and_then(|v| v.as_str())
-                .unwrap_or("UNKNOWN")
                 .to_string(),
         }
     }

@@ -62,17 +62,10 @@ pub struct ConfirmConfig {
 /// Action definition from JSON
 #[derive(Debug, Clone, Deserialize)]
 pub struct ActionDef {
-    /// Key identifier for the action
-    #[allow(dead_code)]
-    pub key: String,
     pub display_name: String,
     #[serde(default)]
     pub shortcut: Option<String>,
     pub sdk_method: String,
-    /// Parameter name for the resource ID
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub id_param: Option<String>,
     /// Legacy field - use `confirm` instead
     #[serde(default)]
     pub needs_confirm: bool,

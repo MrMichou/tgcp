@@ -8,7 +8,7 @@ use crate::resource::{
     extract_json_value, fetch_resources_paginated, get_all_resource_keys, get_resource,
     ResourceDef, ResourceFilter,
 };
-use crate::theme::{Theme, ThemeManager};
+use crate::theme::ThemeManager;
 use anyhow::Result;
 use crossterm::event::KeyCode;
 use serde_json::Value;
@@ -33,8 +33,6 @@ pub struct PendingAction {
     pub sdk_method: String,
     pub resource_id: String,
     pub message: String,
-    #[allow(dead_code)]
-    pub default_no: bool,
     pub destructive: bool,
     pub selected_yes: bool,
 }
@@ -194,12 +192,6 @@ impl App {
             pagination: PaginationState::default(),
             theme_manager,
         }
-    }
-
-    /// Get current theme (for future UI theming)
-    #[allow(dead_code)]
-    pub fn theme(&self) -> &Theme {
-        self.theme_manager.current()
     }
 
     /// Check if auto-refresh is needed (disabled)
@@ -386,11 +378,6 @@ impl App {
         if self.sort_column.is_some() {
             self.apply_sort();
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn toggle_filter(&mut self) {
-        self.filter_active = !self.filter_active;
     }
 
     pub fn clear_filter(&mut self) {
@@ -647,14 +634,12 @@ impl App {
         let message = config
             .message
             .unwrap_or_else(|| action.display_name.clone());
-        let default_no = !config.default_yes;
 
         Some(PendingAction {
             service: self.current_resource()?.service.clone(),
             sdk_method: action.sdk_method.clone(),
             resource_id: resource_id.to_string(),
             message: format!("{} '{}'?", message, resource_name),
-            default_no,
             destructive: config.destructive,
             selected_yes: config.default_yes,
         })

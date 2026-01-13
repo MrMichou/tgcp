@@ -4,16 +4,6 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 use serde_json::Value;
 
-/// Base URLs for GCP services
-#[allow(dead_code)]
-pub mod base_urls {
-    pub const COMPUTE: &str = "https://compute.googleapis.com/compute/v1";
-    pub const STORAGE: &str = "https://storage.googleapis.com/storage/v1";
-    pub const CONTAINER: &str = "https://container.googleapis.com/v1";
-    pub const CLOUDRESOURCEMANAGER: &str = "https://cloudresourcemanager.googleapis.com/v1";
-    pub const IAM: &str = "https://iam.googleapis.com/v1";
-}
-
 /// HTTP client wrapper for GCP API calls
 #[derive(Clone)]
 pub struct GcpHttpClient {
