@@ -44,9 +44,6 @@ pub enum ShellResult {
     Success,
     /// Command failed with exit code
     Failed(i32),
-    /// Command was interrupted (for future use)
-    #[allow(dead_code)]
-    Interrupted,
     /// Error launching command
     Error(String),
 }
@@ -74,60 +71,6 @@ pub fn ssh_to_instance(opts: &SshOptions) -> ShellResult {
     tracing::info!("Executing: gcloud {}", args.join(" "));
 
     execute_command("gcloud", &args)
-}
-
-/// Execute serial console connection (for future use)
-#[allow(dead_code)]
-pub fn serial_console(instance: &str, zone: &str, project: &str, port: u8) -> ShellResult {
-    let args = vec![
-        "compute".to_string(),
-        "connect-to-serial-port".to_string(),
-        instance.to_string(),
-        "--zone".to_string(),
-        zone.to_string(),
-        "--project".to_string(),
-        project.to_string(),
-        "--port".to_string(),
-        port.to_string(),
-    ];
-
-    tracing::info!("Executing: gcloud {}", args.join(" "));
-
-    execute_command("gcloud", &args)
-}
-
-/// Execute kubectl exec into a pod (for future GKE exec support)
-#[allow(dead_code)]
-pub fn kubectl_exec(
-    pod: &str,
-    namespace: &str,
-    container: Option<&str>,
-    command: &[&str],
-) -> ShellResult {
-    let mut args = vec![
-        "exec".to_string(),
-        "-it".to_string(),
-        pod.to_string(),
-        "-n".to_string(),
-        namespace.to_string(),
-    ];
-
-    if let Some(c) = container {
-        args.push("-c".to_string());
-        args.push(c.to_string());
-    }
-
-    args.push("--".to_string());
-
-    if command.is_empty() {
-        args.push("/bin/sh".to_string());
-    } else {
-        args.extend(command.iter().map(|s| s.to_string()));
-    }
-
-    tracing::info!("Executing: kubectl {}", args.join(" "));
-
-    execute_command("kubectl", &args)
 }
 
 /// Open URL in browser (for console links)

@@ -48,38 +48,6 @@ pub async fn execute_action(
     }
 }
 
-/// Describe a single resource
-#[allow(dead_code)]
-pub async fn describe_resource(
-    resource_key: &str,
-    client: &GcpClient,
-    resource_id: &str,
-) -> Result<Value> {
-    let Some(resource_def) = super::get_resource(resource_key) else {
-        return Err(anyhow::anyhow!("Unknown resource: {}", resource_key));
-    };
-
-    // Build describe method name from list method
-    let describe_method = resource_def
-        .detail_sdk_method
-        .as_deref()
-        .unwrap_or_else(|| {
-            // Derive from list method: list_instances -> get_instance
-            if resource_def.sdk_method.starts_with("list_") {
-                // Can't modify &str, so just use the original
-                &resource_def.sdk_method
-            } else {
-                &resource_def.sdk_method
-            }
-        });
-
-    let params = serde_json::json!({
-        "name": resource_id
-    });
-
-    invoke_sdk(&resource_def.service, describe_method, client, &params).await
-}
-
 // =============================================================================
 // Compute Engine
 // =============================================================================

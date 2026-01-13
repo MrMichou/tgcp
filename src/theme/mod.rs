@@ -3,9 +3,7 @@
 //! Customizable color themes for tgcp, inspired by k9s.
 
 use anyhow::Result;
-use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// RGB color as [r, g, b]
@@ -306,12 +304,6 @@ impl Default for Theme {
 }
 
 impl Theme {
-    /// Convert Rgb to ratatui Color (for future UI theming)
-    #[allow(dead_code)]
-    pub fn rgb_to_color(rgb: Rgb) -> Color {
-        Color::Rgb(rgb[0], rgb[1], rgb[2])
-    }
-
     /// Get built-in theme by name
     pub fn builtin(name: &str) -> Option<Self> {
         match name.to_lowercase().as_str() {
@@ -596,25 +588,12 @@ impl Theme {
         let theme: Theme = serde_yaml::from_str(&content)?;
         Ok(theme)
     }
-
-    /// Save theme to file (for future theme export)
-    #[allow(dead_code)]
-    pub fn save_to_file(&self, path: &PathBuf) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let content = serde_yaml::to_string(self)?;
-        std::fs::write(path, content)?;
-        Ok(())
-    }
 }
 
 /// Theme manager for loading and caching themes
 pub struct ThemeManager {
     /// Currently active theme
     current: Theme,
-    /// Project-specific theme overrides
-    project_themes: HashMap<String, String>,
 }
 
 impl ThemeManager {
@@ -622,7 +601,6 @@ impl ThemeManager {
     pub fn new() -> Self {
         Self {
             current: Theme::default(),
-            project_themes: HashMap::new(),
         }
     }
 
@@ -636,16 +614,6 @@ impl ThemeManager {
             if theme_config.exists() {
                 if let Ok(theme) = Theme::load_from_file(&theme_config) {
                     manager.current = theme;
-                }
-            }
-
-            // Load project theme mappings
-            let project_themes_path = config_dir.join("tgcp").join("project_themes.yaml");
-            if project_themes_path.exists() {
-                if let Ok(content) = std::fs::read_to_string(&project_themes_path) {
-                    if let Ok(themes) = serde_yaml::from_str::<HashMap<String, String>>(&content) {
-                        manager.project_themes = themes;
-                    }
                 }
             }
         }
@@ -671,12 +639,6 @@ impl ThemeManager {
         manager
     }
 
-    /// Get current theme (used by App::theme())
-    #[allow(dead_code)]
-    pub fn current(&self) -> &Theme {
-        &self.current
-    }
-
     /// Set theme by name (builtin or custom)
     pub fn set_theme(&mut self, name: &str) -> bool {
         if let Some(theme) = Theme::builtin(name) {
@@ -694,20 +656,6 @@ impl ThemeManager {
             false
         } else {
             false
-        }
-    }
-
-    /// Get theme for a specific project (if configured)
-    #[allow(dead_code)]
-    pub fn get_project_theme(&self, project_id: &str) -> Option<&str> {
-        self.project_themes.get(project_id).map(|s| s.as_str())
-    }
-
-    /// Apply project-specific theme if configured
-    #[allow(dead_code)]
-    pub fn apply_project_theme(&mut self, project_id: &str) {
-        if let Some(theme_name) = self.project_themes.get(project_id).cloned() {
-            self.set_theme(&theme_name);
         }
     }
 

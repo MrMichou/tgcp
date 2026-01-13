@@ -314,9 +314,6 @@ async fn handle_shell_action(
                 Ok(ShellResult::Error(msg)) => {
                     app.error_message = Some(msg);
                 },
-                Ok(ShellResult::Interrupted) => {
-                    tracing::info!("SSH session interrupted");
-                },
                 Err(e) => {
                     app.error_message = Some(format!("SSH error: {}", e));
                 },
@@ -340,9 +337,6 @@ async fn handle_shell_action(
                 },
                 Ok(ShellResult::Error(msg)) => {
                     app.error_message = Some(msg);
-                },
-                Ok(ShellResult::Interrupted) => {
-                    tracing::info!("SSH (IAP) session interrupted");
                 },
                 Err(e) => {
                     app.error_message = Some(format!("SSH (IAP) error: {}", e));

@@ -186,54 +186,6 @@ pub fn get_default_zone() -> Option<String> {
     None
 }
 
-/// Get the default region from gcloud configuration
-#[allow(dead_code)]
-pub fn get_default_region() -> Option<String> {
-    // Check environment variable first
-    if let Ok(region) = std::env::var("CLOUDSDK_COMPUTE_REGION") {
-        return Some(region);
-    }
-
-    // Try to read from gcloud config
-    let config_dir = get_gcloud_config_dir()?;
-
-    // Try active configuration
-    let active_config_path = config_dir.join("active_config");
-    if let Ok(active_config) = std::fs::read_to_string(&active_config_path) {
-        let config_name = active_config.trim();
-        let config_path = config_dir
-            .join("configurations")
-            .join(format!("config_{}", config_name));
-
-        if let Ok(content) = std::fs::read_to_string(&config_path) {
-            let mut in_compute_section = false;
-            for line in content.lines() {
-                let line = line.trim();
-                if line == "[compute]" {
-                    in_compute_section = true;
-                } else if line.starts_with('[') {
-                    in_compute_section = false;
-                } else if in_compute_section && line.starts_with("region") {
-                    if let Some(value) = line.split('=').nth(1) {
-                        return Some(value.trim().to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    // Derive region from zone if available
-    get_default_zone().map(|zone| {
-        // Zone format: us-central1-a -> Region: us-central1
-        let parts: Vec<&str> = zone.rsplitn(2, '-').collect();
-        if parts.len() == 2 {
-            parts[1].to_string()
-        } else {
-            zone
-        }
-    })
-}
-
 /// List all available zones
 pub fn list_zones() -> Vec<String> {
     // Common GCP zones - in practice, this would be fetched from the API
@@ -301,26 +253,6 @@ pub fn list_zones() -> Vec<String> {
     ]
 }
 
-/// List all available regions (derived from zones)
-#[allow(dead_code)]
-pub fn list_regions() -> Vec<String> {
-    let mut regions: Vec<String> = list_zones()
-        .iter()
-        .map(|zone| {
-            let parts: Vec<&str> = zone.rsplitn(2, '-').collect();
-            if parts.len() == 2 {
-                parts[1].to_string()
-            } else {
-                zone.clone()
-            }
-        })
-        .collect();
-
-    regions.sort();
-    regions.dedup();
-    regions
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -330,12 +262,5 @@ mod tests {
         let zones = list_zones();
         assert!(!zones.is_empty());
         assert!(zones.contains(&"us-central1-a".to_string()));
-    }
-
-    #[test]
-    fn test_list_regions() {
-        let regions = list_regions();
-        assert!(!regions.is_empty());
-        assert!(regions.contains(&"us-central1".to_string()));
     }
 }
