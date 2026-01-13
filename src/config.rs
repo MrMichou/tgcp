@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 /// User configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
@@ -67,18 +70,33 @@ impl Config {
     }
 
     /// Save configuration to disk
+    /// Security: Sets restrictive file permissions (0600 on Unix)
     pub fn save(&self) -> Result<()> {
         let Some(path) = Self::config_path() else {
             return Ok(());
         };
 
-        // Create parent directory
+        // Create parent directory with restricted permissions
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
+
+            // Security: Set directory permissions to 0700 (owner only)
+            #[cfg(unix)]
+            {
+                let dir_perms = std::fs::Permissions::from_mode(0o700);
+                let _ = std::fs::set_permissions(parent, dir_perms);
+            }
         }
 
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, content)?;
+        std::fs::write(&path, &content)?;
+
+        // Security: Set file permissions to 0600 (owner read/write only)
+        #[cfg(unix)]
+        {
+            let file_perms = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(&path, file_perms)?;
+        }
 
         Ok(())
     }

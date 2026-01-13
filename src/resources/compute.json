@@ -13,10 +13,13 @@
       "columns": [
         { "header": "NAME", "json_path": "name", "width": 25 },
         { "header": "STATUS", "json_path": "status", "width": 12, "color_map": "status" },
-        { "header": "ZONE", "json_path": "zone_short", "width": 18 },
+        { "header": "ZONE", "json_path": "zone_short", "width": 15 },
         { "header": "MACHINE TYPE", "json_path": "machineType_short", "width": 15 },
+        { "header": "vCPUs", "json_path": "vcpus", "width": 6 },
+        { "header": "TYPE", "json_path": "scheduling_display", "width": 8 },
+        { "header": "DISKS", "json_path": "disks_count", "width": 6 },
         { "header": "INTERNAL IP", "json_path": "networkInterfaces.0.networkIP", "width": 15 },
-        { "header": "EXTERNAL IP", "json_path": "networkInterfaces.0.accessConfigs.0.natIP", "width": 15 }
+        { "header": "CREATED", "json_path": "creationTimestamp_short", "width": 12 }
       ],
       "sub_resources": [
         {

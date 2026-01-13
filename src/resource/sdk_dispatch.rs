@@ -96,7 +96,9 @@ async fn invoke_compute(method: &str, client: &GcpClient, params: &Value) -> Res
         },
         "get_instance" => {
             let name = get_param_str(params, "name")?;
-            let url = client.compute_zonal_url(&format!("instances/{}", name));
+            // Security: URL-encode resource name to prevent injection
+            let url =
+                client.compute_zonal_url(&format!("instances/{}", urlencoding::encode(&name)));
             client.get(&url).await
         },
         // CDN / Load Balancing resources
@@ -193,91 +195,94 @@ async fn execute_compute_action(
     resource_id: &str,
     _params: &Value,
 ) -> Result<Value> {
+    // Security: URL-encode resource_id to prevent URL manipulation
+    let encoded_id = urlencoding::encode(resource_id);
+
     match method {
         "start_instance" => {
-            let url = client.compute_zonal_url(&format!("instances/{}/start", resource_id));
+            let url = client.compute_zonal_url(&format!("instances/{}/start", encoded_id));
             client.post(&url, None).await
         },
         "stop_instance" => {
-            let url = client.compute_zonal_url(&format!("instances/{}/stop", resource_id));
+            let url = client.compute_zonal_url(&format!("instances/{}/stop", encoded_id));
             client.post(&url, None).await
         },
         "reset_instance" => {
-            let url = client.compute_zonal_url(&format!("instances/{}/reset", resource_id));
+            let url = client.compute_zonal_url(&format!("instances/{}/reset", encoded_id));
             client.post(&url, None).await
         },
         "delete_instance" => {
-            let url = client.compute_zonal_url(&format!("instances/{}", resource_id));
+            let url = client.compute_zonal_url(&format!("instances/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_disk" => {
-            let url = client.compute_zonal_url(&format!("disks/{}", resource_id));
+            let url = client.compute_zonal_url(&format!("disks/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_firewall" => {
-            let url = client.compute_global_url(&format!("firewalls/{}", resource_id));
+            let url = client.compute_global_url(&format!("firewalls/{}", encoded_id));
             client.delete(&url).await
         },
         // CDN / Load Balancing delete actions
         "delete_backend_service" => {
-            let url = client.compute_global_url(&format!("backendServices/{}", resource_id));
+            let url = client.compute_global_url(&format!("backendServices/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_backend_bucket" => {
-            let url = client.compute_global_url(&format!("backendBuckets/{}", resource_id));
+            let url = client.compute_global_url(&format!("backendBuckets/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_url_map" => {
-            let url = client.compute_global_url(&format!("urlMaps/{}", resource_id));
+            let url = client.compute_global_url(&format!("urlMaps/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_target_http_proxy" => {
-            let url = client.compute_global_url(&format!("targetHttpProxies/{}", resource_id));
+            let url = client.compute_global_url(&format!("targetHttpProxies/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_target_https_proxy" => {
-            let url = client.compute_global_url(&format!("targetHttpsProxies/{}", resource_id));
+            let url = client.compute_global_url(&format!("targetHttpsProxies/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_global_forwarding_rule" => {
-            let url = client.compute_global_url(&format!("globalForwardingRules/{}", resource_id));
+            let url = client.compute_global_url(&format!("globalForwardingRules/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_ssl_certificate" => {
-            let url = client.compute_global_url(&format!("sslCertificates/{}", resource_id));
+            let url = client.compute_global_url(&format!("sslCertificates/{}", encoded_id));
             client.delete(&url).await
         },
         // Load Balancing delete actions
         "delete_health_check" => {
-            let url = client.compute_global_url(&format!("healthChecks/{}", resource_id));
+            let url = client.compute_global_url(&format!("healthChecks/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_target_pool" => {
-            let url = client.compute_regional_url(&format!("targetPools/{}", resource_id));
+            let url = client.compute_regional_url(&format!("targetPools/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_target_tcp_proxy" => {
-            let url = client.compute_global_url(&format!("targetTcpProxies/{}", resource_id));
+            let url = client.compute_global_url(&format!("targetTcpProxies/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_target_ssl_proxy" => {
-            let url = client.compute_global_url(&format!("targetSslProxies/{}", resource_id));
+            let url = client.compute_global_url(&format!("targetSslProxies/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_target_grpc_proxy" => {
-            let url = client.compute_global_url(&format!("targetGrpcProxies/{}", resource_id));
+            let url = client.compute_global_url(&format!("targetGrpcProxies/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_ssl_policy" => {
-            let url = client.compute_global_url(&format!("sslPolicies/{}", resource_id));
+            let url = client.compute_global_url(&format!("sslPolicies/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_security_policy" => {
-            let url = client.compute_global_url(&format!("securityPolicies/{}", resource_id));
+            let url = client.compute_global_url(&format!("securityPolicies/{}", encoded_id));
             client.delete(&url).await
         },
         "delete_network_endpoint_group" => {
-            let url = client.compute_zonal_url(&format!("networkEndpointGroups/{}", resource_id));
+            let url = client.compute_zonal_url(&format!("networkEndpointGroups/{}", encoded_id));
             client.delete(&url).await
         },
         _ => Err(anyhow::anyhow!("Unknown compute action: {}", method)),
@@ -311,18 +316,18 @@ async fn execute_storage_action(
     resource_id: &str,
     params: &Value,
 ) -> Result<Value> {
+    // Security: URL-encode resource_id to prevent URL manipulation
+    let encoded_id = urlencoding::encode(resource_id);
+
     match method {
         "delete_bucket" => {
-            let url = client.storage_bucket_url(resource_id);
+            // Bucket names are already validated by GCS, but encode for safety
+            let url = client.storage_bucket_url(&encoded_id);
             client.delete(&url).await
         },
         "delete_object" => {
             let bucket = get_param_str(params, "bucket")?;
-            let url = format!(
-                "{}/{}",
-                client.storage_objects_url(&bucket),
-                urlencoding::encode(resource_id)
-            );
+            let url = format!("{}/{}", client.storage_objects_url(&bucket), encoded_id);
             client.delete(&url).await
         },
         _ => Err(anyhow::anyhow!("Unknown storage action: {}", method)),

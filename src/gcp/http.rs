@@ -4,6 +4,28 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 use serde_json::Value;
 
+/// Maximum length of response body to log (to avoid logging sensitive data)
+const MAX_LOG_BODY_LENGTH: usize = 200;
+
+/// Sanitize response body for logging
+/// Truncates long responses and masks potentially sensitive patterns
+fn sanitize_for_log(body: &str) -> String {
+    // Truncate long responses
+    let truncated = if body.len() > MAX_LOG_BODY_LENGTH {
+        format!(
+            "{}... [truncated, {} bytes total]",
+            &body[..MAX_LOG_BODY_LENGTH],
+            body.len()
+        )
+    } else {
+        body.to_string()
+    };
+
+    // Mask patterns that might contain sensitive data
+    // This is a basic implementation - could be expanded
+    truncated.replace(|c: char| !c.is_ascii_graphic() && c != ' ', "")
+}
+
 /// HTTP client wrapper for GCP API calls
 #[derive(Clone)]
 pub struct GcpHttpClient {
@@ -40,8 +62,9 @@ impl GcpHttpClient {
             .context("Failed to read response body")?;
 
         if !status.is_success() {
-            tracing::error!("API error: {} - {}", status, body);
-            return Err(anyhow::anyhow!("API request failed: {} - {}", status, body));
+            // Security: Only log sanitized/truncated error body to avoid leaking sensitive data
+            tracing::error!("API error: {} - {}", status, sanitize_for_log(&body));
+            return Err(anyhow::anyhow!("API request failed: {}", status));
         }
 
         serde_json::from_str(&body).context("Failed to parse response JSON")
@@ -66,12 +89,13 @@ impl GcpHttpClient {
             .context("Failed to read response body")?;
 
         if !status.is_success() {
-            tracing::error!("API error: {} - {}", status, response_body);
-            return Err(anyhow::anyhow!(
-                "API request failed: {} - {}",
+            // Security: Only log sanitized/truncated error body to avoid leaking sensitive data
+            tracing::error!(
+                "API error: {} - {}",
                 status,
-                response_body
-            ));
+                sanitize_for_log(&response_body)
+            );
+            return Err(anyhow::anyhow!("API request failed: {}", status));
         }
 
         // Handle empty response
@@ -101,8 +125,9 @@ impl GcpHttpClient {
             .context("Failed to read response body")?;
 
         if !status.is_success() {
-            tracing::error!("API error: {} - {}", status, body);
-            return Err(anyhow::anyhow!("API request failed: {} - {}", status, body));
+            // Security: Only log sanitized/truncated error body to avoid leaking sensitive data
+            tracing::error!("API error: {} - {}", status, sanitize_for_log(&body));
+            return Err(anyhow::anyhow!("API request failed: {}", status));
         }
 
         // Handle empty response
@@ -121,21 +146,12 @@ impl Default for GcpHttpClient {
 }
 
 /// Format a GCP API error for display
+/// Security: Sanitizes error messages to avoid leaking sensitive API details
 pub fn format_gcp_error(error: &anyhow::Error) -> String {
     let error_str = error.to_string();
 
-    // Try to extract meaningful message from JSON error response
-    if let Ok(json) = serde_json::from_str::<Value>(&error_str) {
-        if let Some(message) = json
-            .get("error")
-            .and_then(|e| e.get("message"))
-            .and_then(|m| m.as_str())
-        {
-            return message.to_string();
-        }
-    }
-
-    // Clean up common error patterns
+    // Clean up common error patterns with user-friendly messages
+    // Security: These generic messages avoid leaking API structure details
     if error_str.contains("403") {
         return "Permission denied. Check your GCP IAM permissions.".to_string();
     }
@@ -148,11 +164,32 @@ pub fn format_gcp_error(error: &anyhow::Error) -> String {
     if error_str.contains("429") {
         return "Rate limit exceeded. Please try again later.".to_string();
     }
+    if error_str.contains("400") {
+        return "Invalid request. Check your parameters.".to_string();
+    }
+    if error_str.contains("500") || error_str.contains("503") {
+        return "GCP service temporarily unavailable. Please try again.".to_string();
+    }
+    if error_str.contains("409") {
+        return "Resource conflict. The resource may already exist or be in use.".to_string();
+    }
 
-    // Truncate long error messages
-    if error_str.len() > 100 {
-        format!("{}...", &error_str[..100])
+    // For other errors, provide a generic message without exposing details
+    // Security: Don't expose raw API error messages to users
+    if error_str.contains("API request failed") {
+        return "Request failed. Check your network connection and try again.".to_string();
+    }
+
+    // Truncate long error messages and remove potential sensitive data
+    let sanitized = error_str
+        .chars()
+        .filter(|c| c.is_ascii_graphic() || *c == ' ')
+        .take(80)
+        .collect::<String>();
+
+    if sanitized.len() < error_str.len() {
+        format!("{}...", sanitized)
     } else {
-        error_str
+        sanitized
     }
 }
