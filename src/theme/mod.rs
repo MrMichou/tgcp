@@ -6,6 +6,22 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Validate theme name to prevent path traversal attacks
+/// Theme names can only contain alphanumeric characters, hyphens, and underscores
+fn validate_theme_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 64 {
+        return false;
+    }
+
+    // Must not start with a dot or hyphen
+    if name.starts_with('.') || name.starts_with('-') {
+        return false;
+    }
+
+    // Only allow safe characters
+    name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
 /// RGB color as [r, g, b]
 pub type Rgb = [u8; 3];
 
@@ -620,7 +636,10 @@ impl ThemeManager {
 
         // Check environment variable
         if let Ok(theme_name) = std::env::var("TGCP_THEME") {
-            if let Some(theme) = Theme::builtin(&theme_name) {
+            // Security: Validate theme name to prevent path traversal
+            if !validate_theme_name(&theme_name) {
+                tracing::warn!("Invalid theme name in TGCP_THEME: contains unsafe characters");
+            } else if let Some(theme) = Theme::builtin(&theme_name) {
                 manager.current = theme;
             } else {
                 // Try loading from skins directory
@@ -640,7 +659,14 @@ impl ThemeManager {
     }
 
     /// Set theme by name (builtin or custom)
+    /// Security: Validates theme name to prevent path traversal
     pub fn set_theme(&mut self, name: &str) -> bool {
+        // Security: Validate theme name first
+        if !validate_theme_name(name) {
+            tracing::warn!("Invalid theme name: '{}' contains unsafe characters", name);
+            return false;
+        }
+
         if let Some(theme) = Theme::builtin(name) {
             self.current = theme;
             true

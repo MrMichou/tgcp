@@ -2,8 +2,119 @@
 //!
 //! Handles SSH connections and shell execution for tgcp.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use std::process::{Command, Stdio};
+
+/// Whitelist of allowed SSH argument prefixes for security
+/// These are safe gcloud compute ssh arguments that don't allow arbitrary command execution
+const ALLOWED_SSH_ARG_PREFIXES: &[&str] = &[
+    "-o",              // SSH options (e.g., -o StrictHostKeyChecking=no)
+    "-i",              // Identity file
+    "-L",              // Local port forwarding
+    "-R",              // Remote port forwarding
+    "-D",              // Dynamic port forwarding (SOCKS proxy)
+    "-p",              // Port
+    "-q",              // Quiet mode
+    "-v",              // Verbose mode
+    "-4",              // IPv4 only
+    "-6",              // IPv6 only
+    "--ssh-flag",      // gcloud ssh flag passthrough
+    "--ssh-key-file",  // SSH key file
+    "--internal-ip",   // Use internal IP
+    "--dry-run",       // Dry run mode
+];
+
+/// Validate that SSH extra_args only contain safe arguments
+/// Returns Ok(()) if all args are safe, Err with details if unsafe arg found
+pub fn validate_ssh_extra_args(args: &[String]) -> Result<()> {
+    for arg in args {
+        let arg_lower = arg.to_lowercase();
+
+        // Check if arg starts with an allowed prefix
+        let is_allowed = ALLOWED_SSH_ARG_PREFIXES
+            .iter()
+            .any(|&prefix| arg_lower.starts_with(prefix));
+
+        if !is_allowed {
+            return Err(anyhow!(
+                "SSH argument '{}' is not in the allowed list. \
+                Allowed prefixes: {:?}",
+                arg,
+                ALLOWED_SSH_ARG_PREFIXES
+            ));
+        }
+
+        // Additional check: block potential command injection via -o
+        if arg_lower.starts_with("-o") {
+            let option_value = if arg.len() > 2 {
+                &arg[2..]
+            } else {
+                continue; // -o by itself, value is next arg
+            };
+
+            // Block dangerous SSH options
+            let dangerous_options = ["proxycommand", "localcommand", "permitlocalcommand"];
+            for dangerous in dangerous_options {
+                if option_value.to_lowercase().contains(dangerous) {
+                    return Err(anyhow!(
+                        "SSH option '{}' contains potentially dangerous option '{}'. \
+                        This option is not allowed for security reasons.",
+                        arg,
+                        dangerous
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validate GCP resource name (instance, zone, project)
+/// GCP resource names follow specific patterns: lowercase alphanumeric with hyphens
+pub fn validate_gcp_resource_name(name: &str, resource_type: &str) -> Result<()> {
+    if name.is_empty() {
+        return Err(anyhow!("{} name cannot be empty", resource_type));
+    }
+
+    if name.len() > 63 {
+        return Err(anyhow!("{} name '{}' exceeds maximum length of 63 characters", resource_type, name));
+    }
+
+    // GCP resource names: lowercase letters, numbers, hyphens
+    // Must start with a letter and end with a letter or number
+    let valid_chars = name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+
+    if !valid_chars {
+        return Err(anyhow!(
+            "{} name '{}' contains invalid characters. \
+            Only lowercase letters, numbers, and hyphens are allowed.",
+            resource_type,
+            name
+        ));
+    }
+
+    // Must start with a letter
+    if let Some(first) = name.chars().next() {
+        if !first.is_ascii_lowercase() {
+            return Err(anyhow!(
+                "{} name '{}' must start with a lowercase letter",
+                resource_type,
+                name
+            ));
+        }
+    }
+
+    // Must not end with a hyphen
+    if name.ends_with('-') {
+        return Err(anyhow!(
+            "{} name '{}' must not end with a hyphen",
+            resource_type,
+            name
+        ));
+    }
+
+    Ok(())
+}
 
 /// SSH connection options
 #[derive(Debug, Clone)]
@@ -51,7 +162,28 @@ pub enum ShellResult {
 /// Execute SSH to a GCE instance
 ///
 /// This function suspends the TUI, runs SSH, and returns when done.
+/// Security: Validates all inputs before executing the command.
 pub fn ssh_to_instance(opts: &SshOptions) -> ShellResult {
+    // Security: Validate resource names to prevent injection
+    if let Err(e) = validate_gcp_resource_name(&opts.instance, "Instance") {
+        return ShellResult::Error(format!("Invalid instance name: {}", e));
+    }
+
+    // Zone validation is more lenient (contains region prefix)
+    if opts.zone.is_empty() || opts.zone.len() > 63 {
+        return ShellResult::Error("Invalid zone name".to_string());
+    }
+
+    // Project validation
+    if opts.project.is_empty() || opts.project.len() > 63 {
+        return ShellResult::Error("Invalid project name".to_string());
+    }
+
+    // Security: Validate extra_args against whitelist
+    if let Err(e) = validate_ssh_extra_args(&opts.extra_args) {
+        return ShellResult::Error(format!("Security validation failed: {}", e));
+    }
+
     let mut args = vec![
         "compute".to_string(),
         "ssh".to_string(),
@@ -68,7 +200,14 @@ pub fn ssh_to_instance(opts: &SshOptions) -> ShellResult {
 
     args.extend(opts.extra_args.clone());
 
-    tracing::info!("Executing: gcloud {}", args.join(" "));
+    // Security: Log command without potentially sensitive extra_args
+    tracing::info!(
+        "Executing SSH: instance={}, zone={}, project={}, iap={}",
+        opts.instance,
+        opts.zone,
+        opts.project,
+        opts.use_iap
+    );
 
     execute_command("gcloud", &args)
 }
@@ -111,36 +250,42 @@ fn execute_command(cmd: &str, args: &[String]) -> ShellResult {
 }
 
 /// Build GCP Console URL for a resource
+/// Security: All dynamic values are URL-encoded to prevent injection
 pub fn console_url(resource_type: &str, resource_name: &str, project: &str, zone: &str) -> String {
+    // Security: URL-encode all dynamic values to prevent URL manipulation
+    let encoded_name = urlencoding::encode(resource_name);
+    let encoded_project = urlencoding::encode(project);
+    let encoded_zone = urlencoding::encode(zone);
+
     match resource_type {
         "compute-instances" => {
             format!(
                 "https://console.cloud.google.com/compute/instancesDetail/zones/{}/instances/{}?project={}",
-                zone, resource_name, project
+                encoded_zone, encoded_name, encoded_project
             )
         },
         "compute-disks" => {
             format!(
                 "https://console.cloud.google.com/compute/disksDetail/zones/{}/disks/{}?project={}",
-                zone, resource_name, project
+                encoded_zone, encoded_name, encoded_project
             )
         },
         "storage-buckets" => {
             format!(
                 "https://console.cloud.google.com/storage/browser/{}?project={}",
-                resource_name, project
+                encoded_name, encoded_project
             )
         },
         "gke-clusters" => {
             format!(
                 "https://console.cloud.google.com/kubernetes/clusters/details/{}/{}?project={}",
-                zone, resource_name, project
+                encoded_zone, encoded_name, encoded_project
             )
         },
         _ => {
             format!(
                 "https://console.cloud.google.com/home/dashboard?project={}",
-                project
+                encoded_project
             )
         },
     }
