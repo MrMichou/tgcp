@@ -19,7 +19,8 @@ fn validate_theme_name(name: &str) -> bool {
     }
 
     // Only allow safe characters
-    name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    name.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// RGB color as [r, g, b]

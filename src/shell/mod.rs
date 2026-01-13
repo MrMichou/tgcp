@@ -8,20 +8,20 @@ use std::process::{Command, Stdio};
 /// Whitelist of allowed SSH argument prefixes for security
 /// These are safe gcloud compute ssh arguments that don't allow arbitrary command execution
 const ALLOWED_SSH_ARG_PREFIXES: &[&str] = &[
-    "-o",              // SSH options (e.g., -o StrictHostKeyChecking=no)
-    "-i",              // Identity file
-    "-L",              // Local port forwarding
-    "-R",              // Remote port forwarding
-    "-D",              // Dynamic port forwarding (SOCKS proxy)
-    "-p",              // Port
-    "-q",              // Quiet mode
-    "-v",              // Verbose mode
-    "-4",              // IPv4 only
-    "-6",              // IPv6 only
-    "--ssh-flag",      // gcloud ssh flag passthrough
-    "--ssh-key-file",  // SSH key file
-    "--internal-ip",   // Use internal IP
-    "--dry-run",       // Dry run mode
+    "-o",             // SSH options (e.g., -o StrictHostKeyChecking=no)
+    "-i",             // Identity file
+    "-L",             // Local port forwarding
+    "-R",             // Remote port forwarding
+    "-D",             // Dynamic port forwarding (SOCKS proxy)
+    "-p",             // Port
+    "-q",             // Quiet mode
+    "-v",             // Verbose mode
+    "-4",             // IPv4 only
+    "-6",             // IPv6 only
+    "--ssh-flag",     // gcloud ssh flag passthrough
+    "--ssh-key-file", // SSH key file
+    "--internal-ip",  // Use internal IP
+    "--dry-run",      // Dry run mode
 ];
 
 /// Validate that SSH extra_args only contain safe arguments
@@ -77,12 +77,18 @@ pub fn validate_gcp_resource_name(name: &str, resource_type: &str) -> Result<()>
     }
 
     if name.len() > 63 {
-        return Err(anyhow!("{} name '{}' exceeds maximum length of 63 characters", resource_type, name));
+        return Err(anyhow!(
+            "{} name '{}' exceeds maximum length of 63 characters",
+            resource_type,
+            name
+        ));
     }
 
     // GCP resource names: lowercase letters, numbers, hyphens
     // Must start with a letter and end with a letter or number
-    let valid_chars = name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    let valid_chars = name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
 
     if !valid_chars {
         return Err(anyhow!(

@@ -97,7 +97,8 @@ async fn invoke_compute(method: &str, client: &GcpClient, params: &Value) -> Res
         "get_instance" => {
             let name = get_param_str(params, "name")?;
             // Security: URL-encode resource name to prevent injection
-            let url = client.compute_zonal_url(&format!("instances/{}", urlencoding::encode(&name)));
+            let url =
+                client.compute_zonal_url(&format!("instances/{}", urlencoding::encode(&name)));
             client.get(&url).await
         },
         // CDN / Load Balancing resources
@@ -326,11 +327,7 @@ async fn execute_storage_action(
         },
         "delete_object" => {
             let bucket = get_param_str(params, "bucket")?;
-            let url = format!(
-                "{}/{}",
-                client.storage_objects_url(&bucket),
-                encoded_id
-            );
+            let url = format!("{}/{}", client.storage_objects_url(&bucket), encoded_id);
             client.delete(&url).await
         },
         _ => Err(anyhow::anyhow!("Unknown storage action: {}", method)),

@@ -12,15 +12,18 @@ const MAX_LOG_BODY_LENGTH: usize = 200;
 fn sanitize_for_log(body: &str) -> String {
     // Truncate long responses
     let truncated = if body.len() > MAX_LOG_BODY_LENGTH {
-        format!("{}... [truncated, {} bytes total]", &body[..MAX_LOG_BODY_LENGTH], body.len())
+        format!(
+            "{}... [truncated, {} bytes total]",
+            &body[..MAX_LOG_BODY_LENGTH],
+            body.len()
+        )
     } else {
         body.to_string()
     };
 
     // Mask patterns that might contain sensitive data
     // This is a basic implementation - could be expanded
-    truncated
-        .replace(|c: char| !c.is_ascii_graphic() && c != ' ', "")
+    truncated.replace(|c: char| !c.is_ascii_graphic() && c != ' ', "")
 }
 
 /// HTTP client wrapper for GCP API calls
@@ -87,7 +90,11 @@ impl GcpHttpClient {
 
         if !status.is_success() {
             // Security: Only log sanitized/truncated error body to avoid leaking sensitive data
-            tracing::error!("API error: {} - {}", status, sanitize_for_log(&response_body));
+            tracing::error!(
+                "API error: {} - {}",
+                status,
+                sanitize_for_log(&response_body)
+            );
             return Err(anyhow::anyhow!("API request failed: {}", status));
         }
 

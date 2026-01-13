@@ -157,7 +157,14 @@ fn post_process_item(mut item: Value, resource_def: &ResourceDef) -> Value {
 
         if let Some(machine_type) = map.get("machineType").and_then(|v| v.as_str()) {
             let short = extract_short_name(machine_type);
-            map.insert("machineType_short".to_string(), Value::String(short));
+            map.insert(
+                "machineType_short".to_string(),
+                Value::String(short.clone()),
+            );
+
+            // Extract vCPUs from machine type name (e.g., n1-standard-4 -> 4)
+            let vcpus = extract_vcpus_from_machine_type(&short);
+            map.insert("vcpus".to_string(), Value::String(vcpus));
         }
 
         if let Some(disk_type) = map.get("type").and_then(|v| v.as_str()) {
@@ -431,6 +438,54 @@ fn post_process_item(mut item: Value, resource_def: &ResourceDef) -> Value {
                 Value::String("-".to_string()),
             );
         }
+
+        // VM Instance specific fields
+        // Count attached disks
+        if let Some(disks) = map.get("disks").and_then(|v| v.as_array()) {
+            map.insert(
+                "disks_count".to_string(),
+                Value::String(disks.len().to_string()),
+            );
+        }
+
+        // Preemptible/Spot status
+        let provisioning_model = map
+            .get("scheduling")
+            .and_then(|v| v.get("provisioningModel"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("STANDARD");
+        let preemptible = map
+            .get("scheduling")
+            .and_then(|v| v.get("preemptible"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let scheduling_display = if provisioning_model == "SPOT" {
+            "Spot"
+        } else if preemptible {
+            "Preempt"
+        } else {
+            "Standard"
+        };
+        map.insert(
+            "scheduling_display".to_string(),
+            Value::String(scheduling_display.to_string()),
+        );
+
+        // Creation timestamp
+        if let Some(created) = map.get("creationTimestamp").and_then(|v| v.as_str()) {
+            let short = format_timestamp_short(created);
+            map.insert("creationTimestamp_short".to_string(), Value::String(short));
+        }
+
+        // Labels count
+        if let Some(labels) = map.get("labels").and_then(|v| v.as_object()) {
+            map.insert(
+                "labels_count".to_string(),
+                Value::String(labels.len().to_string()),
+            );
+        } else {
+            map.insert("labels_count".to_string(), Value::String("0".to_string()));
+        }
     }
 
     let _ = resource_def; // Silence unused warning
@@ -441,6 +496,44 @@ fn post_process_item(mut item: Value, resource_def: &ResourceDef) -> Value {
 /// e.g., `https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a` -> `us-central1-a`
 fn extract_short_name(url: &str) -> String {
     url.rsplit('/').next().unwrap_or(url).to_string()
+}
+
+/// Extract vCPUs from machine type name
+/// e.g., `n1-standard-4` -> `4`, `e2-medium` -> `1`, `c2-standard-60` -> `60`
+fn extract_vcpus_from_machine_type(machine_type: &str) -> String {
+    // Handle custom machine types: custom-N-M where N is vCPUs
+    if machine_type.starts_with("custom-") || machine_type.starts_with("n1-custom-") {
+        let parts: Vec<&str> = machine_type.split('-').collect();
+        if parts.len() >= 2 {
+            // For custom-N-M format, vCPUs is after "custom"
+            if let Some(idx) = parts.iter().position(|&p| p == "custom") {
+                if idx + 1 < parts.len() && parts[idx + 1].parse::<u32>().is_ok() {
+                    return parts[idx + 1].to_string();
+                }
+            }
+        }
+    }
+
+    // Handle shared-core machine types
+    match machine_type {
+        "f1-micro" => return "0.2".to_string(),
+        "g1-small" => return "0.5".to_string(),
+        "e2-micro" => return "0.25".to_string(),
+        "e2-small" => return "0.5".to_string(),
+        "e2-medium" => return "1".to_string(),
+        _ => {},
+    }
+
+    // Standard format: family-type-N (e.g., n1-standard-4, c2-standard-60)
+    let parts: Vec<&str> = machine_type.split('-').collect();
+    if parts.len() >= 3 {
+        if let Ok(vcpus) = parts[parts.len() - 1].parse::<u32>() {
+            return vcpus.to_string();
+        }
+    }
+
+    // If we can't determine, return "-"
+    "-".to_string()
 }
 
 /// Format timestamp to short form

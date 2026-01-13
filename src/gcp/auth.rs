@@ -92,8 +92,10 @@ impl GcpCredentials {
             });
         }
 
-        tracing::debug!("New token cached, expires in ~{} minutes",
-            (DEFAULT_TOKEN_TTL - TOKEN_EXPIRY_BUFFER).as_secs() / 60);
+        tracing::debug!(
+            "New token cached, expires in ~{} minutes",
+            (DEFAULT_TOKEN_TTL - TOKEN_EXPIRY_BUFFER).as_secs() / 60
+        );
 
         Ok(token_str)
     }
@@ -144,7 +146,9 @@ fn validate_project_id(project: &str) -> bool {
     }
 
     // All chars must be lowercase, digit, or hyphen
-    project.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    project
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// Read the default project from gcloud configuration
@@ -198,7 +202,10 @@ pub fn get_default_project() -> Option<String> {
         let config_name = active_config.trim();
 
         // Security: Validate config name to prevent path traversal
-        if !config_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        if !config_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
             tracing::warn!("Invalid characters in active_config name");
             return None;
         }
