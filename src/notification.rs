@@ -27,15 +27,6 @@ impl DetailLevel {
             _ => Self::Detailed,
         }
     }
-
-    #[allow(dead_code)]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Minimal => "minimal",
-            Self::Detailed => "detailed",
-            Self::Verbose => "verbose",
-        }
-    }
 }
 
 /// Sound configuration for notifications
@@ -56,15 +47,6 @@ impl SoundConfig {
             "errors_only" | "errors" => Self::ErrorsOnly,
             "all" => Self::All,
             _ => Self::Off,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::ErrorsOnly => "errors_only",
-            Self::All => "all",
         }
     }
 }
@@ -157,8 +139,6 @@ pub struct Notification {
     pub resource_type: String,
     pub resource_id: String,
     pub status: NotificationStatus,
-    #[allow(dead_code)]
-    pub message: Option<String>,
     pub gcp_operation_url: Option<String>,
     pub created_at: Instant,
     pub completed_at: Option<Instant>,
@@ -172,7 +152,6 @@ impl Notification {
             resource_type,
             resource_id,
             status: NotificationStatus::Pending,
-            message: None,
             gcp_operation_url: None,
             created_at: Instant::now(),
             completed_at: None,
@@ -398,12 +377,6 @@ impl NotificationManager {
         }
     }
 
-    /// Get notification by ID
-    #[allow(dead_code)]
-    pub fn get(&self, id: Uuid) -> Option<&Notification> {
-        self.notifications.iter().find(|n| n.id == id)
-    }
-
     /// Get the most recent active notification (for toast display)
     pub fn current_toast(&self) -> Option<&Notification> {
         // Check if toast should still be visible
@@ -473,22 +446,6 @@ impl NotificationManager {
     fn play_beep(&self) {
         print!("\x07");
     }
-
-    /// Check if there are any notifications to show
-    #[allow(dead_code)]
-    pub fn has_notifications(&self) -> bool {
-        !self.notifications.is_empty()
-    }
-
-    /// Get count of unread/recent notifications (last 5 minutes)
-    #[allow(dead_code)]
-    pub fn recent_count(&self) -> usize {
-        let cutoff = Duration::from_secs(300); // 5 minutes
-        self.notifications
-            .iter()
-            .filter(|n| n.created_at.elapsed() < cutoff)
-            .count()
-    }
 }
 
 #[cfg(test)]
@@ -508,21 +465,21 @@ mod tests {
 
         assert_eq!(manager.notifications.len(), 1);
         assert!(matches!(
-            manager.get(id).unwrap().status,
+            manager.notifications.front().unwrap().status,
             NotificationStatus::Pending
         ));
 
         // Mark in progress
         manager.mark_in_progress(id, Some("https://example.com/op/123".to_string()));
         assert!(matches!(
-            manager.get(id).unwrap().status,
+            manager.notifications.front().unwrap().status,
             NotificationStatus::InProgress
         ));
 
         // Mark success
         manager.mark_success(id);
         assert!(matches!(
-            manager.get(id).unwrap().status,
+            manager.notifications.front().unwrap().status,
             NotificationStatus::Success
         ));
     }
