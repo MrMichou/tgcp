@@ -68,31 +68,27 @@ pub fn render(f: &mut Frame, app: &App) {
         });
     let header = Row::new(header_cells).height(1);
 
-    let rows = app
-        .notification_manager
-        .notifications
-        .iter()
-        .map(|notif| {
-            let (status_icon, status_color) = match &notif.status {
-                NotificationStatus::Pending => ("◯", Color::DarkGray),
-                NotificationStatus::InProgress => ("↻", Color::Yellow),
-                NotificationStatus::Success => ("✓", Color::Green),
-                NotificationStatus::Error(_) => ("✗", Color::Red),
-            };
+    let rows = app.notification_manager.notifications.iter().map(|notif| {
+        let (status_icon, status_color) = match &notif.status {
+            NotificationStatus::Pending => ("◯", Color::DarkGray),
+            NotificationStatus::InProgress => ("↻", Color::Yellow),
+            NotificationStatus::Success => ("✓", Color::Green),
+            NotificationStatus::Error(_) => ("✗", Color::Red),
+        };
 
-            let action = notif.operation_type.display_name();
-            let resource = &notif.resource_id;
-            let duration = notif.duration_display();
-            let time_ago = format_time_ago(notif.created_at.elapsed());
+        let action = notif.operation_type.display_name();
+        let resource = &notif.resource_id;
+        let duration = notif.duration_display();
+        let time_ago = format_time_ago(notif.created_at.elapsed());
 
-            Row::new(vec![
-                Cell::from(format!(" {}", status_icon)).style(Style::default().fg(status_color)),
-                Cell::from(format!(" {}", action)),
-                Cell::from(format!(" {}", truncate(resource, 30))),
-                Cell::from(format!(" {}", duration)),
-                Cell::from(format!(" {}", time_ago)),
-            ])
-        });
+        Row::new(vec![
+            Cell::from(format!(" {}", status_icon)).style(Style::default().fg(status_color)),
+            Cell::from(format!(" {}", action)),
+            Cell::from(format!(" {}", truncate(resource, 30))),
+            Cell::from(format!(" {}", duration)),
+            Cell::from(format!(" {}", time_ago)),
+        ])
+    });
 
     let widths = [
         Constraint::Length(8),

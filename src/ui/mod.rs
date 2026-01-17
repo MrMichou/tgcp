@@ -457,9 +457,10 @@ fn render_crumb(f: &mut Frame, app: &App, area: Rect) {
     };
 
     // Check for toast notification
-    let toast_text = app.notification_manager.current_toast().map(|notif| {
-        notif.toast_message(app.notification_manager.detail_level)
-    });
+    let toast_text = app
+        .notification_manager
+        .current_toast()
+        .map(|notif| notif.toast_message(app.notification_manager.detail_level));
 
     // Build notification indicator
     let notification_indicator = {
@@ -516,7 +517,9 @@ fn render_crumb(f: &mut Frame, app: &App, area: Rect) {
 
     // Build notification indicator style
     let indicator_style = if app.notification_manager.in_progress_count() > 0 {
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
     };

@@ -485,7 +485,10 @@ async fn handle_confirm_mode(
                         Ok(response) => {
                             // Extract operation URL for polling
                             let operation_url = extract_operation_url(&response);
-                            app.mark_notification_in_progress(notification_id, operation_url.clone());
+                            app.mark_notification_in_progress(
+                                notification_id,
+                                operation_url.clone(),
+                            );
 
                             // If no operation URL (immediate completion), mark success
                             if operation_url.is_none() {

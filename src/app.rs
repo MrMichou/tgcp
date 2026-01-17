@@ -162,10 +162,13 @@ impl App {
 
         // Initialize notification manager with config settings
         let mut notification_manager = NotificationManager::new();
-        notification_manager.detail_level = DetailLevel::from_str(&config.notifications.detail_level);
-        notification_manager.toast_duration = Duration::from_secs(config.notifications.toast_duration_secs);
+        notification_manager.detail_level =
+            DetailLevel::from_str(&config.notifications.detail_level);
+        notification_manager.toast_duration =
+            Duration::from_secs(config.notifications.toast_duration_secs);
         notification_manager.max_history = config.notifications.max_history;
-        notification_manager.poll_interval = Duration::from_millis(config.notifications.poll_interval_ms);
+        notification_manager.poll_interval =
+            Duration::from_millis(config.notifications.poll_interval_ms);
         notification_manager.auto_poll = config.notifications.auto_poll;
         notification_manager.sound_config = SoundConfig::from_str(&config.notifications.sound);
 
@@ -719,7 +722,8 @@ impl App {
     /// Mark a notification as in progress with optional operation URL
     pub fn mark_notification_in_progress(&mut self, id: Uuid, operation_url: Option<String>) {
         if !id.is_nil() {
-            self.notification_manager.mark_in_progress(id, operation_url);
+            self.notification_manager
+                .mark_in_progress(id, operation_url);
         }
     }
 
@@ -753,21 +757,21 @@ impl App {
                         self.notification_manager.mark_success(notification_id);
                         // Refresh current view to show updated state
                         let _ = self.refresh_current().await;
-                    }
+                    },
                     OperationStatus::Failed(error) => {
                         self.notification_manager.mark_error(notification_id, error);
-                    }
+                    },
                     OperationStatus::Running => {
                         // Still running, will poll again
-                    }
+                    },
                     OperationStatus::Unknown(s) => {
                         tracing::warn!("Unknown operation status: {}", s);
-                    }
+                    },
                 },
                 Err(e) => {
                     tracing::warn!("Failed to poll operation: {}", e);
                     // Don't mark as error, might be transient
-                }
+                },
             }
         }
 

@@ -28,6 +28,7 @@ impl DetailLevel {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Minimal => "minimal",
@@ -58,6 +59,7 @@ impl SoundConfig {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Off => "off",
@@ -155,6 +157,7 @@ pub struct Notification {
     pub resource_type: String,
     pub resource_id: String,
     pub status: NotificationStatus,
+    #[allow(dead_code)]
     pub message: Option<String>,
     pub gcp_operation_url: Option<String>,
     pub created_at: Instant,
@@ -162,11 +165,7 @@ pub struct Notification {
 }
 
 impl Notification {
-    pub fn new(
-        operation_type: OperationType,
-        resource_type: String,
-        resource_id: String,
-    ) -> Self {
+    pub fn new(operation_type: OperationType, resource_type: String, resource_id: String) -> Self {
         Self {
             id: Uuid::new_v4(),
             operation_type,
@@ -223,7 +222,7 @@ impl Notification {
         let verb = match &self.status {
             NotificationStatus::Pending | NotificationStatus::InProgress => {
                 self.operation_type.present_participle()
-            }
+            },
             NotificationStatus::Success => self.operation_type.past_tense(),
             NotificationStatus::Error(_) => "Failed",
         };
@@ -231,7 +230,7 @@ impl Notification {
         match detail_level {
             DetailLevel::Minimal => {
                 format!("{} {} {}", icon, verb, self.resource_id)
-            }
+            },
             DetailLevel::Detailed => {
                 if self.status.is_terminal() {
                     format!(
@@ -244,14 +243,11 @@ impl Notification {
                 } else {
                     format!("{} {} {}...", icon, verb, self.resource_id)
                 }
-            }
+            },
             DetailLevel::Verbose => {
                 let base = format!(
                     "{} {} {} [{}]",
-                    icon,
-                    verb,
-                    self.resource_id,
-                    self.resource_type
+                    icon, verb, self.resource_id, self.resource_type
                 );
                 if let NotificationStatus::Error(ref err) = self.status {
                     format!("{} - {}", base, err)
@@ -260,7 +256,7 @@ impl Notification {
                 } else {
                     format!("{}...", base)
                 }
-            }
+            },
         }
     }
 }
@@ -393,13 +389,17 @@ impl NotificationManager {
             self.pending_operations.retain(|p| p.notification_id != id);
 
             // Play sound if configured
-            if matches!(self.sound_config, SoundConfig::ErrorsOnly | SoundConfig::All) {
+            if matches!(
+                self.sound_config,
+                SoundConfig::ErrorsOnly | SoundConfig::All
+            ) {
                 self.play_beep();
             }
         }
     }
 
     /// Get notification by ID
+    #[allow(dead_code)]
     pub fn get(&self, id: Uuid) -> Option<&Notification> {
         self.notifications.iter().find(|n| n.id == id)
     }
@@ -423,7 +423,12 @@ impl NotificationManager {
     pub fn in_progress_count(&self) -> usize {
         self.notifications
             .iter()
-            .filter(|n| matches!(n.status, NotificationStatus::InProgress | NotificationStatus::Pending))
+            .filter(|n| {
+                matches!(
+                    n.status,
+                    NotificationStatus::InProgress | NotificationStatus::Pending
+                )
+            })
             .count()
     }
 
@@ -451,7 +456,11 @@ impl NotificationManager {
     fn trim_history(&mut self) {
         while self.notifications.len() > self.max_history {
             // Remove oldest completed notification
-            if let Some(pos) = self.notifications.iter().rposition(|n| n.status.is_terminal()) {
+            if let Some(pos) = self
+                .notifications
+                .iter()
+                .rposition(|n| n.status.is_terminal())
+            {
                 self.notifications.remove(pos);
             } else {
                 // If all are active, remove from back anyway
@@ -466,11 +475,13 @@ impl NotificationManager {
     }
 
     /// Check if there are any notifications to show
+    #[allow(dead_code)]
     pub fn has_notifications(&self) -> bool {
         !self.notifications.is_empty()
     }
 
     /// Get count of unread/recent notifications (last 5 minutes)
+    #[allow(dead_code)]
     pub fn recent_count(&self) -> usize {
         let cutoff = Duration::from_secs(300); // 5 minutes
         self.notifications

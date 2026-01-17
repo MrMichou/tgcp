@@ -200,11 +200,13 @@ impl GcpClient {
     // =========================================================================
 
     /// Build zonal operations URL
+    #[allow(dead_code)]
     pub fn compute_zonal_operation_url(&self, operation: &str) -> String {
         self.compute_url(&format!("zones/{}/operations/{}", self.zone, operation))
     }
 
     /// Build global operations URL
+    #[allow(dead_code)]
     pub fn compute_global_operation_url(&self, operation: &str) -> String {
         self.compute_url(&format!("global/operations/{}", operation))
     }
@@ -234,7 +236,7 @@ impl GcpClient {
                 } else {
                     Ok(OperationStatus::Done)
                 }
-            }
+            },
             "RUNNING" | "PENDING" => Ok(OperationStatus::Running),
             other => Ok(OperationStatus::Unknown(other.to_string())),
         }
@@ -251,6 +253,7 @@ pub enum OperationStatus {
 }
 
 impl OperationStatus {
+    #[allow(dead_code)]
     pub fn is_terminal(&self) -> bool {
         matches!(self, Self::Done | Self::Failed(_))
     }
@@ -265,8 +268,12 @@ pub fn extract_operation_url(response: &Value) -> Option<String> {
 }
 
 /// Extract operation name from a GCP API response
+#[allow(dead_code)]
 pub fn extract_operation_name(response: &Value) -> Option<String> {
-    response.get("name").and_then(|v| v.as_str()).map(String::from)
+    response
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(String::from)
 }
 
 /// Format a GCP API error for display
