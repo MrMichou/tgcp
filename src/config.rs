@@ -34,6 +34,9 @@ pub struct Config {
     /// SSH options
     #[serde(default)]
     pub ssh: SshConfig,
+    /// Notification options
+    #[serde(default)]
+    pub notifications: NotificationConfig,
 }
 
 /// SSH configuration options
@@ -45,6 +48,70 @@ pub struct SshConfig {
     /// Extra arguments to pass to gcloud compute ssh
     #[serde(default)]
     pub extra_args: Vec<String>,
+}
+
+/// Notification configuration options
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationConfig {
+    /// Enable notifications
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Detail level: "minimal", "detailed", "verbose"
+    #[serde(default = "default_detail_level")]
+    pub detail_level: String,
+    /// Toast duration in seconds
+    #[serde(default = "default_toast_duration")]
+    pub toast_duration_secs: u64,
+    /// Maximum notifications to keep in history
+    #[serde(default = "default_max_history")]
+    pub max_history: usize,
+    /// Polling interval in milliseconds for pending operations
+    #[serde(default = "default_poll_interval")]
+    pub poll_interval_ms: u64,
+    /// Automatically poll pending operations
+    #[serde(default = "default_true")]
+    pub auto_poll: bool,
+    /// Sound configuration: "off", "errors_only", "all"
+    #[serde(default = "default_sound")]
+    pub sound: String,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_detail_level() -> String {
+    "detailed".to_string()
+}
+
+fn default_toast_duration() -> u64 {
+    5
+}
+
+fn default_max_history() -> usize {
+    50
+}
+
+fn default_poll_interval() -> u64 {
+    2000
+}
+
+fn default_sound() -> String {
+    "off".to_string()
+}
+
+impl Default for NotificationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            detail_level: "detailed".to_string(),
+            toast_duration_secs: 5,
+            max_history: 50,
+            poll_interval_ms: 2000,
+            auto_poll: true,
+            sound: "off".to_string(),
+        }
+    }
 }
 
 impl Config {

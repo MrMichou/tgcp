@@ -3,7 +3,8 @@
 //! Central application state management for tgcp.
 
 use crate::config::Config;
-use crate::gcp::client::GcpClient;
+use crate::gcp::client::{GcpClient, OperationStatus};
+use crate::notification::{DetailLevel, NotificationManager, OperationType, SoundConfig};
 use crate::resource::{
     extract_json_value, fetch_resources_paginated, get_all_resource_keys, get_resource,
     ResourceDef, ResourceFilter,
@@ -12,18 +13,21 @@ use crate::theme::ThemeManager;
 use anyhow::Result;
 use crossterm::event::KeyCode;
 use serde_json::Value;
+use std::time::Duration;
+use uuid::Uuid;
 
 /// Application modes
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
-    Normal,   // Viewing list
-    Command,  // : command input
-    Help,     // ? help popup
-    Confirm,  // Confirmation dialog
-    Warning,  // Warning/info dialog (OK only)
-    Projects, // Project selection
-    Zones,    // Zone selection
-    Describe, // Viewing JSON details of selected item
+    Normal,        // Viewing list
+    Command,       // : command input
+    Help,          // ? help popup
+    Confirm,       // Confirmation dialog
+    Warning,       // Warning/info dialog (OK only)
+    Projects,      // Project selection
+    Zones,         // Zone selection
+    Describe,      // Viewing JSON details of selected item
+    Notifications, // Notifications history panel
 }
 
 /// Pending action that requires confirmation
@@ -128,6 +132,10 @@ pub struct App {
 
     // Theme
     pub theme_manager: ThemeManager,
+
+    // Notifications
+    pub notification_manager: NotificationManager,
+    pub notifications_selected: usize,
 }
 
 impl App {
@@ -151,6 +159,18 @@ impl App {
         // Apply theme from config or project-specific setting
         let theme_name = config.effective_theme(&project);
         theme_manager.set_theme(&theme_name);
+
+        // Initialize notification manager with config settings
+        let mut notification_manager = NotificationManager::new();
+        notification_manager.detail_level =
+            DetailLevel::from_str(&config.notifications.detail_level);
+        notification_manager.toast_duration =
+            Duration::from_secs(config.notifications.toast_duration_secs);
+        notification_manager.max_history = config.notifications.max_history;
+        notification_manager.poll_interval =
+            Duration::from_millis(config.notifications.poll_interval_ms);
+        notification_manager.auto_poll = config.notifications.auto_poll;
+        notification_manager.sound_config = SoundConfig::from_str(&config.notifications.sound);
 
         Self {
             client,
@@ -191,6 +211,8 @@ impl App {
             warning_message: None,
             pagination: PaginationState::default(),
             theme_manager,
+            notification_manager,
+            notifications_selected: 0,
         }
     }
 
@@ -221,6 +243,8 @@ impl App {
         // Add built-in commands
         commands.push("projects".to_string());
         commands.push("zones".to_string());
+        commands.push("notifications".to_string());
+        commands.push("notifications clear".to_string());
 
         // Add theme commands
         commands.push("theme".to_string());
@@ -667,6 +691,98 @@ impl App {
         self.mode = Mode::Zones;
     }
 
+    pub fn enter_notifications_mode(&mut self) {
+        self.notifications_selected = 0;
+        self.mode = Mode::Notifications;
+    }
+
+    // =========================================================================
+    // Notifications
+    // =========================================================================
+
+    /// Create a notification for an operation and return its ID
+    pub fn create_operation_notification(
+        &mut self,
+        sdk_method: &str,
+        resource_type: &str,
+        resource_id: &str,
+    ) -> Uuid {
+        if !self.config.notifications.enabled {
+            return Uuid::nil();
+        }
+
+        let op_type = OperationType::from_method(sdk_method);
+        self.notification_manager.create_notification(
+            op_type,
+            resource_type.to_string(),
+            resource_id.to_string(),
+        )
+    }
+
+    /// Mark a notification as in progress with optional operation URL
+    pub fn mark_notification_in_progress(&mut self, id: Uuid, operation_url: Option<String>) {
+        if !id.is_nil() {
+            self.notification_manager
+                .mark_in_progress(id, operation_url);
+        }
+    }
+
+    /// Mark a notification as successful
+    pub fn mark_notification_success(&mut self, id: Uuid) {
+        if !id.is_nil() {
+            self.notification_manager.mark_success(id);
+        }
+    }
+
+    /// Mark a notification as failed
+    pub fn mark_notification_error(&mut self, id: Uuid, error: String) {
+        if !id.is_nil() {
+            self.notification_manager.mark_error(id, error);
+        }
+    }
+
+    /// Poll pending operations and update their status
+    pub async fn poll_pending_operations(&mut self) -> Result<()> {
+        if !self.config.notifications.enabled || !self.notification_manager.auto_poll {
+            return Ok(());
+        }
+
+        // Get operations that need polling
+        let ops_to_poll = self.notification_manager.operations_to_poll();
+
+        for (notification_id, operation_url) in ops_to_poll {
+            match self.client.poll_operation(&operation_url).await {
+                Ok(status) => match status {
+                    OperationStatus::Done => {
+                        self.notification_manager.mark_success(notification_id);
+                        // Refresh current view to show updated state
+                        let _ = self.refresh_current().await;
+                    },
+                    OperationStatus::Failed(error) => {
+                        self.notification_manager.mark_error(notification_id, error);
+                    },
+                    OperationStatus::Running => {
+                        // Still running, will poll again
+                    },
+                    OperationStatus::Unknown(s) => {
+                        tracing::warn!("Unknown operation status: {}", s);
+                    },
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to poll operation: {}", e);
+                    // Don't mark as error, might be transient
+                },
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Clear all notifications
+    pub fn clear_notifications(&mut self) {
+        self.notification_manager.clear();
+    }
+
     // =========================================================================
     // Selector Filtering
     // =========================================================================
@@ -957,6 +1073,13 @@ impl App {
             },
             "zones" => {
                 self.enter_zones_mode();
+            },
+            "notifications" => {
+                if parts.len() > 1 && parts[1] == "clear" {
+                    self.clear_notifications();
+                } else {
+                    self.enter_notifications_mode();
+                }
             },
             "zone" if parts.len() > 1 => {
                 self.switch_zone(parts[1]).await?;

@@ -115,6 +115,10 @@ pub fn render(f: &mut Frame, _app: &App) {
             Span::raw("Switch zone (type to search)"),
         ]),
         Line::from(vec![
+            Span::styled("  n               ", Style::default().fg(Color::Yellow)),
+            Span::raw("View notifications history"),
+        ]),
+        Line::from(vec![
             Span::styled("  :               ", Style::default().fg(Color::Yellow)),
             Span::raw("Command mode (type resource name)"),
         ]),
