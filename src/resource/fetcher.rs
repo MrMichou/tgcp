@@ -1,12 +1,16 @@
 //! Resource Fetcher
 //!
 //! Handles fetching resources from GCP APIs based on resource definitions.
+//! Supports both sequential and concurrent pagination for performance.
 
 use super::registry::{get_resource, ResourceDef};
 use super::sdk_dispatch;
 use crate::gcp::client::GcpClient;
 use anyhow::Result;
+use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::Value;
+use std::sync::Arc;
+use tokio::sync::Semaphore;
 
 /// Filter for resources
 #[derive(Debug, Clone)]
@@ -48,6 +52,122 @@ pub async fn fetch_resources(
             break;
         }
         page_token = result.next_token;
+    }
+
+    Ok(all_items)
+}
+
+/// Fetch multiple resource types concurrently
+/// Returns a vector of results in the same order as the input resource keys
+#[allow(dead_code)]
+pub async fn fetch_multiple_resources(
+    resource_keys: &[&str],
+    client: &GcpClient,
+    max_concurrent: usize,
+) -> Vec<Result<Vec<Value>>> {
+    let semaphore = Arc::new(Semaphore::new(max_concurrent.max(1)));
+    let mut futures = FuturesUnordered::new();
+
+    for (idx, &resource_key) in resource_keys.iter().enumerate() {
+        let sem = Arc::clone(&semaphore);
+        let key = resource_key.to_string();
+        let client = client.clone();
+
+        futures.push(async move {
+            let _permit = sem.acquire().await.unwrap();
+            let result = fetch_resources(&key, &client, &[]).await;
+            (idx, result)
+        });
+    }
+
+    // Collect results preserving order
+    let mut results: Vec<Option<Result<Vec<Value>>>> =
+        (0..resource_keys.len()).map(|_| None).collect();
+
+    while let Some((idx, result)) = futures.next().await {
+        results[idx] = Some(result);
+    }
+
+    results.into_iter().map(|r| r.unwrap()).collect()
+}
+
+/// Fetch all pages concurrently with speculative fetching
+/// Uses a sliding window approach: fetch first page, then speculatively fetch more
+#[allow(dead_code)]
+pub async fn fetch_resources_concurrent(
+    resource_key: &str,
+    client: &GcpClient,
+    filters: &[ResourceFilter],
+    max_concurrent: usize,
+) -> Result<Vec<Value>> {
+    // First, fetch initial page to see if there are more
+    let first_result =
+        fetch_resources_paginated(resource_key, client, filters, None).await?;
+
+    let mut all_items = first_result.items;
+
+    // If no more pages, return early
+    let Some(first_next_token) = first_result.next_token else {
+        return Ok(all_items);
+    };
+
+    // Concurrent fetch of remaining pages using a semaphore for rate limiting
+    let semaphore = Arc::new(Semaphore::new(max_concurrent.max(1)));
+    let mut page_tokens = vec![first_next_token];
+    let mut page_results: Vec<Vec<Value>> = Vec::new();
+
+    // Fetch pages in batches until no more tokens
+    loop {
+        if page_tokens.is_empty() {
+            break;
+        }
+
+        let mut futures = FuturesUnordered::new();
+        let current_tokens: Vec<String> = std::mem::take(&mut page_tokens);
+
+        for (batch_idx, token) in current_tokens.into_iter().enumerate() {
+            let sem = Arc::clone(&semaphore);
+            let key = resource_key.to_string();
+            let client = client.clone();
+            let filters = filters.to_vec();
+
+            futures.push(async move {
+                let _permit = sem.acquire().await.unwrap();
+                let result =
+                    fetch_resources_paginated(&key, &client, &filters, Some(&token)).await;
+                (batch_idx, result)
+            });
+        }
+
+        // Collect batch results
+        let batch_count = futures.len();
+        let mut batch_results: Vec<Option<Result<PaginatedResult>>> =
+            (0..batch_count).map(|_| None).collect();
+
+        while let Some((idx, result)) = futures.next().await {
+            batch_results[idx] = Some(result);
+        }
+
+        // Process results in order
+        for result_opt in batch_results {
+            match result_opt.unwrap() {
+                Ok(result) => {
+                    page_results.push(result.items);
+                    if let Some(next_token) = result.next_token {
+                        page_tokens.push(next_token);
+                    }
+                },
+                Err(e) => {
+                    // Log error but continue with other pages
+                    tracing::warn!("Error fetching page: {}", e);
+                },
+            }
+        }
+    }
+
+    // Combine all results
+    for items in page_results {
+        all_items.extend(items);
     }
 
     Ok(all_items)

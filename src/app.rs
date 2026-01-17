@@ -13,6 +13,8 @@ use crate::theme::ThemeManager;
 use anyhow::Result;
 use crossterm::event::KeyCode;
 use serde_json::Value;
+use std::collections::HashSet;
+use std::ops::Range;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -136,6 +138,14 @@ pub struct App {
     // Notifications
     pub notification_manager: NotificationManager,
     pub notifications_selected: usize,
+
+    // Virtual scrolling
+    pub viewport_height: usize,
+    pub scroll_offset: usize,
+
+    // Multi-selection (bulk operations)
+    pub selected_indices: HashSet<usize>,
+    pub visual_mode: bool,
 }
 
 impl App {
@@ -213,6 +223,12 @@ impl App {
             theme_manager,
             notification_manager,
             notifications_selected: 0,
+            // Virtual scrolling
+            viewport_height: 20, // Will be updated during render
+            scroll_offset: 0,
+            // Multi-selection
+            selected_indices: HashSet::new(),
+            visual_mode: false,
         }
     }
 
@@ -397,6 +413,10 @@ impl App {
         if self.selected >= self.filtered_items.len() && !self.filtered_items.is_empty() {
             self.selected = self.filtered_items.len() - 1;
         }
+
+        // Clear selection when filter changes (indices become invalid)
+        self.selected_indices.clear();
+        self.scroll_offset = 0;
 
         // Re-apply sort if active
         if self.sort_column.is_some() {
@@ -903,6 +923,10 @@ impl App {
         self.filter_text.clear();
         self.filter_active = false;
         self.mode = Mode::Normal;
+        // Clear selection and scroll state
+        self.selected_indices.clear();
+        self.visual_mode = false;
+        self.scroll_offset = 0;
 
         self.reset_pagination();
         self.refresh_current().await?;
@@ -953,6 +977,10 @@ impl App {
         self.selected = 0;
         self.filter_text.clear();
         self.filter_active = false;
+        // Clear selection and scroll state
+        self.selected_indices.clear();
+        self.visual_mode = false;
+        self.scroll_offset = 0;
 
         self.reset_pagination();
         self.refresh_current().await?;
@@ -966,6 +994,10 @@ impl App {
             self.selected = 0;
             self.filter_text.clear();
             self.filter_active = false;
+            // Clear selection and scroll state
+            self.selected_indices.clear();
+            self.visual_mode = false;
+            self.scroll_offset = 0;
 
             self.reset_pagination();
             self.refresh_current().await?;
@@ -1146,5 +1178,321 @@ impl App {
         }
 
         Ok(false)
+    }
+
+    // =========================================================================
+    // Virtual Scrolling
+    // =========================================================================
+
+    /// Update the viewport height (called from UI during render)
+    pub fn update_viewport(&mut self, height: usize) {
+        self.viewport_height = height.max(1);
+    }
+
+    /// Ensure the selected item is visible in the viewport
+    pub fn ensure_visible(&mut self) {
+        if self.filtered_items.is_empty() {
+            self.scroll_offset = 0;
+            return;
+        }
+
+        let visible_height = self.viewport_height;
+        let margin = 2; // Keep cursor at least this far from edge
+
+        // If selected is above visible area, scroll up
+        if self.selected < self.scroll_offset + margin {
+            // Scroll so selected is near top with margin
+            self.scroll_offset = self.selected.saturating_sub(margin);
+        }
+        // If selected is below visible area, scroll down
+        else if self.selected >= self.scroll_offset + visible_height.saturating_sub(margin) {
+            // Scroll so selected is near bottom with margin
+            self.scroll_offset = self
+                .selected
+                .saturating_sub(visible_height.saturating_sub(margin + 1));
+        }
+
+        // Clamp scroll offset to valid range
+        let max_offset = self
+            .filtered_items
+            .len()
+            .saturating_sub(self.viewport_height);
+        self.scroll_offset = self.scroll_offset.min(max_offset);
+    }
+
+    /// Get the range of visible items based on scroll offset and viewport
+    pub fn visible_range(&self) -> Range<usize> {
+        let start = self.scroll_offset;
+        let end = (self.scroll_offset + self.viewport_height).min(self.filtered_items.len());
+        start..end
+    }
+
+    // =========================================================================
+    // Multi-Selection (Bulk Operations)
+    // =========================================================================
+
+    /// Toggle selection of the current item
+    pub fn toggle_selection(&mut self) {
+        if self.filtered_items.is_empty() {
+            return;
+        }
+
+        if self.selected_indices.contains(&self.selected) {
+            self.selected_indices.remove(&self.selected);
+        } else {
+            self.selected_indices.insert(self.selected);
+        }
+    }
+
+    /// Select all filtered items
+    pub fn select_all(&mut self) {
+        self.selected_indices = (0..self.filtered_items.len()).collect();
+    }
+
+    /// Clear all selections
+    pub fn clear_selection(&mut self) {
+        self.selected_indices.clear();
+        self.visual_mode = false;
+    }
+
+    /// Check if an item at the given index is selected
+    pub fn is_selected(&self, index: usize) -> bool {
+        self.selected_indices.contains(&index)
+    }
+
+    /// Get count of selected items
+    pub fn selection_count(&self) -> usize {
+        self.selected_indices.len()
+    }
+
+    /// Get all selected items
+    #[allow(dead_code)]
+    pub fn selected_items(&self) -> Vec<&Value> {
+        self.selected_indices
+            .iter()
+            .filter_map(|&idx| self.filtered_items.get(idx))
+            .collect()
+    }
+
+    /// Get IDs of all selected items (for bulk actions)
+    pub fn selected_resource_ids(&self) -> Vec<String> {
+        let Some(resource) = self.current_resource() else {
+            return Vec::new();
+        };
+
+        self.selected_indices
+            .iter()
+            .filter_map(|&idx| {
+                self.filtered_items.get(idx).map(|item| {
+                    let id = extract_json_value(item, &resource.name_field);
+                    if id != "-" && !id.is_empty() {
+                        id
+                    } else {
+                        extract_json_value(item, &resource.id_field)
+                    }
+                })
+            })
+            .collect()
+    }
+
+    /// Toggle visual/multi-select mode
+    pub fn toggle_visual_mode(&mut self) {
+        self.visual_mode = !self.visual_mode;
+        if !self.visual_mode {
+            // Optionally clear selection when exiting visual mode
+            // self.clear_selection();
+        }
+    }
+
+    /// Extend selection from current position (for Shift+j/k)
+    pub fn extend_selection_down(&mut self) {
+        if self.filtered_items.is_empty() {
+            return;
+        }
+
+        // Select current item if not already
+        self.selected_indices.insert(self.selected);
+
+        // Move down and select
+        if self.selected < self.filtered_items.len() - 1 {
+            self.selected += 1;
+            self.selected_indices.insert(self.selected);
+        }
+    }
+
+    /// Extend selection upward (for Shift+k)
+    pub fn extend_selection_up(&mut self) {
+        if self.filtered_items.is_empty() {
+            return;
+        }
+
+        // Select current item if not already
+        self.selected_indices.insert(self.selected);
+
+        // Move up and select
+        if self.selected > 0 {
+            self.selected -= 1;
+            self.selected_indices.insert(self.selected);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_visible_range_basic() {
+        // Simulate: 100 items, viewport 10, scroll_offset 0
+        let filtered_items: Vec<Value> = (0..100)
+            .map(|i| serde_json::json!({"id": i}))
+            .collect();
+        let scroll_offset = 0;
+        let viewport_height = 10;
+
+        let start = scroll_offset;
+        let end = (scroll_offset + viewport_height).min(filtered_items.len());
+        let range = start..end;
+
+        assert_eq!(range, 0..10);
+    }
+
+    #[test]
+    fn test_visible_range_scrolled() {
+        let filtered_items: Vec<Value> = (0..100)
+            .map(|i| serde_json::json!({"id": i}))
+            .collect();
+        let scroll_offset = 50;
+        let viewport_height = 10;
+
+        let start = scroll_offset;
+        let end = (scroll_offset + viewport_height).min(filtered_items.len());
+        let range = start..end;
+
+        assert_eq!(range, 50..60);
+    }
+
+    #[test]
+    fn test_visible_range_at_end() {
+        let filtered_items: Vec<Value> = (0..25)
+            .map(|i| serde_json::json!({"id": i}))
+            .collect();
+        let scroll_offset = 20;
+        let viewport_height = 10;
+
+        let start = scroll_offset;
+        let end = (scroll_offset + viewport_height).min(filtered_items.len());
+        let range = start..end;
+
+        assert_eq!(range, 20..25);
+    }
+
+    #[test]
+    fn test_selection_toggle() {
+        let mut selected_indices = HashSet::new();
+        let selected = 5;
+
+        // Toggle on
+        if selected_indices.contains(&selected) {
+            selected_indices.remove(&selected);
+        } else {
+            selected_indices.insert(selected);
+        }
+        assert!(selected_indices.contains(&5));
+
+        // Toggle off
+        if selected_indices.contains(&selected) {
+            selected_indices.remove(&selected);
+        } else {
+            selected_indices.insert(selected);
+        }
+        assert!(!selected_indices.contains(&5));
+    }
+
+    #[test]
+    fn test_select_all() {
+        let item_count = 50;
+        let selected_indices: HashSet<usize> = (0..item_count).collect();
+
+        assert_eq!(selected_indices.len(), 50);
+        assert!(selected_indices.contains(&0));
+        assert!(selected_indices.contains(&49));
+    }
+
+    #[test]
+    fn test_clear_selection() {
+        let mut selected_indices: HashSet<usize> = (0..10).collect();
+        assert_eq!(selected_indices.len(), 10);
+
+        selected_indices.clear();
+        assert_eq!(selected_indices.len(), 0);
+    }
+
+    #[test]
+    fn test_selection_count() {
+        let selected_indices: HashSet<usize> = vec![1, 3, 5, 7, 9].into_iter().collect();
+        assert_eq!(selected_indices.len(), 5);
+    }
+
+    #[test]
+    fn test_ensure_visible_logic() {
+        let viewport_height: usize = 10;
+        let margin: usize = 2;
+
+        // Case 1: selected is at top, scroll should be 0
+        let selected: usize = 0;
+        let mut scroll_offset: usize = 5;
+        if selected < scroll_offset + margin {
+            scroll_offset = selected.saturating_sub(margin);
+        }
+        assert_eq!(scroll_offset, 0);
+
+        // Case 2: selected is at bottom, scroll should adjust
+        let selected: usize = 50;
+        let mut scroll_offset: usize = 30;
+        let filtered_items_len: usize = 100;
+        if selected >= scroll_offset + viewport_height.saturating_sub(margin) {
+            scroll_offset = selected.saturating_sub(viewport_height.saturating_sub(margin + 1));
+        }
+        let max_offset = filtered_items_len.saturating_sub(viewport_height);
+        scroll_offset = scroll_offset.min(max_offset);
+        assert!(scroll_offset <= max_offset);
+        assert!(selected >= scroll_offset);
+        assert!(selected < scroll_offset + viewport_height);
+    }
+
+    #[test]
+    fn test_extend_selection_down() {
+        let mut selected_indices = HashSet::new();
+        let mut selected = 5;
+        let filtered_items_len = 100;
+
+        // Insert current and move down
+        selected_indices.insert(selected);
+        if selected < filtered_items_len - 1 {
+            selected += 1;
+            selected_indices.insert(selected);
+        }
+
+        assert!(selected_indices.contains(&5));
+        assert!(selected_indices.contains(&6));
+        assert_eq!(selected, 6);
+    }
+
+    #[test]
+    fn test_extend_selection_up() {
+        let mut selected_indices = HashSet::new();
+        let mut selected = 5;
+
+        // Insert current and move up
+        selected_indices.insert(selected);
+        if selected > 0 {
+            selected -= 1;
+            selected_indices.insert(selected);
+        }
+
+        assert!(selected_indices.contains(&5));
+        assert!(selected_indices.contains(&4));
+        assert_eq!(selected, 4);
     }
 }

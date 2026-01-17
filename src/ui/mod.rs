@@ -12,6 +12,7 @@ use crate::resource::{extract_json_value, get_color_for_value, ColumnDef};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    symbols,
     text::{Line, Span},
     widgets::{
         Block, Borders, Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
@@ -20,7 +21,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn render(f: &mut Frame, app: &App) {
+pub fn render(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -70,7 +71,7 @@ pub fn render(f: &mut Frame, app: &App) {
     }
 }
 
-fn render_main_content(f: &mut Frame, app: &App, area: Rect) {
+fn render_main_content(f: &mut Frame, app: &mut App, area: Rect) {
     // If filter is active or has text, show filter input above table
     let show_filter = app.filter_active || !app.filter_text.is_empty();
 
@@ -107,18 +108,29 @@ fn render_filter_bar(f: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Render dynamic table based on current resource definition
-fn render_dynamic_table(f: &mut Frame, app: &App, area: Rect) {
+/// Uses virtual scrolling for performance with large datasets
+fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
     let Some(resource) = app.current_resource() else {
         let msg = Paragraph::new("Unknown resource").style(Style::default().fg(Color::Red));
         f.render_widget(msg, area);
         return;
     };
 
-    // Build title with count, zone info, and pagination
+    // Build title with count, zone info, selection, and pagination
     let title = {
         let count = app.filtered_items.len();
         let total = app.items.len();
         let is_global = resource.is_global;
+        let selection_count = app.selection_count();
+
+        // Build selection indicator
+        let selection_info = if selection_count > 0 {
+            format!(" [{}✓]", selection_count)
+        } else if app.visual_mode {
+            " [V]".to_string()
+        } else {
+            String::new()
+        };
 
         // Build pagination indicator
         let page_info = if app.pagination.has_more || app.pagination.current_page > 1 {
@@ -133,30 +145,39 @@ fn render_dynamic_table(f: &mut Frame, app: &App, area: Rect) {
 
         if is_global {
             if app.filter_text.is_empty() {
-                format!(" {}[{}]{} ", resource.display_name, count, page_info)
+                format!(
+                    " {}[{}]{}{} ",
+                    resource.display_name, count, selection_info, page_info
+                )
             } else {
                 format!(
-                    " {}[{}/{}]{} ",
-                    resource.display_name, count, total, page_info
+                    " {}[{}/{}]{}{} ",
+                    resource.display_name, count, total, selection_info, page_info
                 )
             }
         } else if app.filter_text.is_empty() {
             format!(
-                " {}({})[{}]{} ",
-                resource.display_name, app.zone, count, page_info
+                " {}({})[{}]{}{} ",
+                resource.display_name, app.zone, count, selection_info, page_info
             )
         } else {
             format!(
-                " {}({})[{}/{}]{} ",
-                resource.display_name, app.zone, count, total, page_info
+                " {}({})[{}/{}]{}{} ",
+                resource.display_name, app.zone, count, total, selection_info, page_info
             )
         }
     };
 
     // Create the bordered box with centered title
+    let border_color = if app.visual_mode {
+        Color::Magenta
+    } else {
+        Color::DarkGray
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
+        .border_style(Style::default().fg(border_color))
         .title(Span::styled(
             title,
             Style::default()
@@ -168,50 +189,154 @@ fn render_dynamic_table(f: &mut Frame, app: &App, area: Rect) {
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
-    // Build header from column definitions with left padding and sort indicators
-    let header_cells = resource.columns.iter().enumerate().map(|(idx, col)| {
-        // Add sort indicator if this column is sorted
-        let sort_indicator = if app.sort_column == Some(idx) {
-            if app.sort_ascending {
-                " ▲"
-            } else {
-                " ▼"
-            }
-        } else {
-            ""
-        };
+    // Calculate viewport - account for header row
+    let visible_height = (inner_area.height as usize).saturating_sub(1);
+    app.update_viewport(visible_height);
+    app.ensure_visible();
 
-        let header_text = if app.sort_column == Some(idx) {
-            format!(" {}{}", col.header, sort_indicator)
-        } else {
-            format!(" {}", col.header)
-        };
+    let total_items = app.filtered_items.len();
+    let needs_scrollbar = total_items > visible_height;
 
-        Cell::from(header_text).style(
+    // Adjust table area for scrollbar if needed
+    let table_area = if needs_scrollbar {
+        Rect {
+            width: inner_area.width.saturating_sub(1),
+            ..inner_area
+        }
+    } else {
+        inner_area
+    };
+
+    // Get visible range for virtual scrolling
+    let range = app.visible_range();
+
+    // Build header from column definitions with selection column and sort indicators
+    let has_selection = app.selection_count() > 0 || app.visual_mode;
+
+    let header_cells: Vec<Cell> = if has_selection {
+        // Add selection column header
+        let mut cells = vec![Cell::from(" ").style(
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
-        )
-    });
+        )];
+        cells.extend(resource.columns.iter().enumerate().map(|(idx, col)| {
+            let sort_indicator = if app.sort_column == Some(idx) {
+                if app.sort_ascending {
+                    " ▲"
+                } else {
+                    " ▼"
+                }
+            } else {
+                ""
+            };
+
+            let header_text = if app.sort_column == Some(idx) {
+                format!(" {}{}", col.header, sort_indicator)
+            } else {
+                format!(" {}", col.header)
+            };
+
+            Cell::from(header_text).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )
+        }));
+        cells
+    } else {
+        resource
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(idx, col)| {
+                let sort_indicator = if app.sort_column == Some(idx) {
+                    if app.sort_ascending {
+                        " ▲"
+                    } else {
+                        " ▼"
+                    }
+                } else {
+                    ""
+                };
+
+                let header_text = if app.sort_column == Some(idx) {
+                    format!(" {}{}", col.header, sort_indicator)
+                } else {
+                    format!(" {}", col.header)
+                };
+
+                Cell::from(header_text).style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )
+            })
+            .collect()
+    };
+
     let header = Row::new(header_cells).height(1);
 
-    // Build rows from filtered items with left padding
-    let rows = app.filtered_items.iter().map(|item| {
-        let cells = resource.columns.iter().map(|col| {
-            let value = extract_json_value(item, &col.json_path);
-            let style = get_cell_style(&value, col);
-            let display_value = format_cell_value(&value, col);
-            Cell::from(format!(" {}", truncate_string(&display_value, 38))).style(style)
-        });
-        Row::new(cells)
-    });
-
-    // Build column widths
-    let widths: Vec<Constraint> = resource
-        .columns
+    // Build only visible rows (virtual scrolling)
+    let rows: Vec<Row> = app.filtered_items[range.clone()]
         .iter()
-        .map(|col| Constraint::Percentage(col.width))
+        .enumerate()
+        .map(|(rel_idx, item)| {
+            let abs_idx = range.start + rel_idx;
+            let is_selected = app.is_selected(abs_idx);
+
+            let mut cells: Vec<Cell> = Vec::new();
+
+            // Add selection indicator column if in selection mode
+            if has_selection {
+                let indicator = if is_selected { "●" } else { " " };
+                let style = if is_selected {
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+                cells.push(Cell::from(format!(" {}", indicator)).style(style));
+            }
+
+            // Add data cells
+            cells.extend(resource.columns.iter().map(|col| {
+                let value = extract_json_value(item, &col.json_path);
+                let base_style = get_cell_style(&value, col);
+                let display_value = format_cell_value(&value, col);
+
+                // Apply selection highlighting to the entire row if selected
+                let style = if is_selected {
+                    base_style.bg(Color::Rgb(40, 60, 40))
+                } else {
+                    base_style
+                };
+
+                Cell::from(format!(" {}", truncate_string(&display_value, 38))).style(style)
+            }));
+
+            Row::new(cells)
+        })
         .collect();
+
+    // Build column widths - add selection column if in selection mode
+    let widths: Vec<Constraint> = if has_selection {
+        let mut w = vec![Constraint::Length(3)]; // Selection indicator column
+        w.extend(
+            resource
+                .columns
+                .iter()
+                .map(|col| Constraint::Percentage(col.width)),
+        );
+        w
+    } else {
+        resource
+            .columns
+            .iter()
+            .map(|col| Constraint::Percentage(col.width))
+            .collect()
+    };
 
     let table = Table::new(rows, widths).header(header).row_highlight_style(
         Style::default()
@@ -220,10 +345,26 @@ fn render_dynamic_table(f: &mut Frame, app: &App, area: Rect) {
             .add_modifier(Modifier::BOLD),
     );
 
+    // Adjust selected index for virtual scrolling
     let mut state = TableState::default();
-    state.select(Some(app.selected));
+    if app.selected >= range.start && app.selected < range.end {
+        state.select(Some(app.selected - range.start));
+    }
 
-    f.render_stateful_widget(table, inner_area, &mut state);
+    f.render_stateful_widget(table, table_area, &mut state);
+
+    // Render scrollbar if needed
+    if needs_scrollbar {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .symbols(symbols::scrollbar::VERTICAL)
+            .begin_symbol(Some("↑"))
+            .end_symbol(Some("↓"));
+
+        let mut scrollbar_state =
+            ScrollbarState::new(total_items.saturating_sub(visible_height)).position(app.scroll_offset);
+
+        f.render_stateful_widget(scrollbar, inner_area, &mut scrollbar_state);
+    }
 }
 
 /// Get cell style based on value and column definition
