@@ -82,6 +82,33 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         // Quit
         KeyCode::Char('q') => return Ok(true),
 
+        // Multi-selection (bulk operations)
+        KeyCode::Char(' ') => {
+            // Space toggles selection on current item
+            app.toggle_selection();
+            app.next(); // Move to next item after selecting
+        },
+        KeyCode::Char('v') if !modifiers.contains(KeyModifiers::SHIFT) => {
+            // Toggle visual/multi-select mode
+            app.toggle_visual_mode();
+        },
+        KeyCode::Char('V') | KeyCode::Char('v') if modifiers.contains(KeyModifiers::SHIFT) => {
+            // Select all visible items
+            app.select_all();
+        },
+        KeyCode::Esc if app.selection_count() > 0 || app.visual_mode => {
+            // Clear selection with Escape (only when there's selection or visual mode)
+            app.clear_selection();
+        },
+        KeyCode::Char('J') | KeyCode::Char('j') if modifiers.contains(KeyModifiers::SHIFT) => {
+            // Extend selection downward
+            app.extend_selection_down();
+        },
+        KeyCode::Char('K') | KeyCode::Char('k') if modifiers.contains(KeyModifiers::SHIFT) => {
+            // Extend selection upward
+            app.extend_selection_up();
+        },
+
         // Navigation - vim style + accessible alternatives
         KeyCode::Char('j') | KeyCode::Down => app.next(),
         KeyCode::Char('k') | KeyCode::Up => app.previous(),
@@ -238,11 +265,21 @@ async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -
         return Ok(());
     }
 
-    let Some(item) = app.selected_item().cloned() else {
+    let Some(resource) = app.current_resource() else {
         return Ok(());
     };
 
-    let Some(resource) = app.current_resource() else {
+    // Check if we have multiple selections (bulk operation)
+    let selected_ids = app.selected_resource_ids();
+    let has_bulk_selection = selected_ids.len() > 1;
+
+    // If bulk selection, handle bulk action
+    if has_bulk_selection && !action_def.shell_action {
+        return handle_bulk_action(app, action_def, selected_ids).await;
+    }
+
+    // Single item action (existing behavior)
+    let Some(item) = app.selected_item().cloned() else {
         return Ok(());
     };
 
@@ -300,6 +337,50 @@ async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -
         }
     }
 
+    Ok(())
+}
+
+/// Handle bulk action on multiple selected resources
+async fn handle_bulk_action(
+    app: &mut App,
+    action_def: &crate::resource::ActionDef,
+    resource_ids: Vec<String>,
+) -> Result<()> {
+    let Some(resource) = app.current_resource() else {
+        return Ok(());
+    };
+
+    let count = resource_ids.len();
+
+    // Build bulk confirmation message
+    let action_name = &action_def.display_name;
+    let is_destructive = action_def
+        .confirm
+        .as_ref()
+        .map(|c| c.destructive)
+        .unwrap_or(false);
+
+    let message = format!(
+        "{} {} {}?",
+        action_name,
+        count,
+        if count == 1 { "resource" } else { "resources" }
+    );
+
+    // Create bulk pending action using the existing PendingAction struct
+    // We store all resource IDs joined by a special separator
+    let bulk_resource_id = resource_ids.join("\n");
+
+    let pending = crate::app::PendingAction {
+        service: resource.service.clone(),
+        sdk_method: action_def.sdk_method.clone(),
+        resource_id: bulk_resource_id,
+        message,
+        destructive: is_destructive,
+        selected_yes: false,
+    };
+
+    app.enter_confirm_mode(pending);
     Ok(())
 }
 
@@ -464,45 +545,104 @@ async fn handle_confirm_mode(
             if let Some(pending) = app.pending_action.take() {
                 if pending.selected_yes || code == KeyCode::Char('y') || code == KeyCode::Char('Y')
                 {
-                    // Create notification before executing
-                    let notification_id = app.create_operation_notification(
-                        &pending.sdk_method,
-                        &pending.service,
-                        &pending.resource_id,
-                    );
+                    // Check if this is a bulk action (multiple resource IDs separated by newline)
+                    let resource_ids: Vec<&str> = pending.resource_id.split('\n').collect();
+                    let is_bulk = resource_ids.len() > 1;
 
-                    // Execute the action
-                    let result = execute_action(
-                        &pending.service,
-                        &pending.sdk_method,
-                        &app.client,
-                        &pending.resource_id,
-                        &serde_json::Value::Null,
-                    )
-                    .await;
+                    if is_bulk {
+                        // Execute bulk action
+                        let mut success_count = 0;
+                        let mut error_count = 0;
+                        let total = resource_ids.len();
 
-                    match result {
-                        Ok(response) => {
-                            // Extract operation URL for polling
-                            let operation_url = extract_operation_url(&response);
-                            app.mark_notification_in_progress(
-                                notification_id,
-                                operation_url.clone(),
+                        for resource_id in resource_ids {
+                            // Create notification for each resource
+                            let notification_id = app.create_operation_notification(
+                                &pending.sdk_method,
+                                &pending.service,
+                                resource_id,
                             );
 
-                            // If no operation URL (immediate completion), mark success
-                            if operation_url.is_none() {
-                                app.mark_notification_success(notification_id);
-                            }
+                            // Execute the action
+                            let result = execute_action(
+                                &pending.service,
+                                &pending.sdk_method,
+                                &app.client,
+                                resource_id,
+                                &serde_json::Value::Null,
+                            )
+                            .await;
 
-                            // Refresh view (polling will update status)
-                            app.refresh_current().await?;
-                        },
-                        Err(e) => {
-                            let error_msg = crate::gcp::client::format_gcp_error(&e);
-                            app.mark_notification_error(notification_id, error_msg.clone());
-                            app.error_message = Some(error_msg);
-                        },
+                            match result {
+                                Ok(response) => {
+                                    let operation_url = extract_operation_url(&response);
+                                    app.mark_notification_in_progress(
+                                        notification_id,
+                                        operation_url.clone(),
+                                    );
+                                    if operation_url.is_none() {
+                                        app.mark_notification_success(notification_id);
+                                    }
+                                    success_count += 1;
+                                },
+                                Err(e) => {
+                                    let error_msg = crate::gcp::client::format_gcp_error(&e);
+                                    app.mark_notification_error(notification_id, error_msg);
+                                    error_count += 1;
+                                },
+                            }
+                        }
+
+                        // Show summary message
+                        if error_count > 0 {
+                            app.error_message = Some(format!(
+                                "Bulk action: {} succeeded, {} failed of {}",
+                                success_count, error_count, total
+                            ));
+                        }
+
+                        // Clear selection after bulk action
+                        app.clear_selection();
+
+                        // Refresh view
+                        app.refresh_current().await?;
+                    } else {
+                        // Single item action (existing behavior)
+                        let notification_id = app.create_operation_notification(
+                            &pending.sdk_method,
+                            &pending.service,
+                            &pending.resource_id,
+                        );
+
+                        let result = execute_action(
+                            &pending.service,
+                            &pending.sdk_method,
+                            &app.client,
+                            &pending.resource_id,
+                            &serde_json::Value::Null,
+                        )
+                        .await;
+
+                        match result {
+                            Ok(response) => {
+                                let operation_url = extract_operation_url(&response);
+                                app.mark_notification_in_progress(
+                                    notification_id,
+                                    operation_url.clone(),
+                                );
+
+                                if operation_url.is_none() {
+                                    app.mark_notification_success(notification_id);
+                                }
+
+                                app.refresh_current().await?;
+                            },
+                            Err(e) => {
+                                let error_msg = crate::gcp::client::format_gcp_error(&e);
+                                app.mark_notification_error(notification_id, error_msg.clone());
+                                app.error_message = Some(error_msg);
+                            },
+                        }
                     }
                 }
             }
