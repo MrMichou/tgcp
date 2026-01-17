@@ -1344,9 +1344,7 @@ mod tests {
     #[test]
     fn test_visible_range_basic() {
         // Simulate: 100 items, viewport 10, scroll_offset 0
-        let filtered_items: Vec<Value> = (0..100)
-            .map(|i| serde_json::json!({"id": i}))
-            .collect();
+        let filtered_items: Vec<Value> = (0..100).map(|i| serde_json::json!({"id": i})).collect();
         let scroll_offset = 0;
         let viewport_height = 10;
 
@@ -1359,9 +1357,7 @@ mod tests {
 
     #[test]
     fn test_visible_range_scrolled() {
-        let filtered_items: Vec<Value> = (0..100)
-            .map(|i| serde_json::json!({"id": i}))
-            .collect();
+        let filtered_items: Vec<Value> = (0..100).map(|i| serde_json::json!({"id": i})).collect();
         let scroll_offset = 50;
         let viewport_height = 10;
 
@@ -1374,9 +1370,7 @@ mod tests {
 
     #[test]
     fn test_visible_range_at_end() {
-        let filtered_items: Vec<Value> = (0..25)
-            .map(|i| serde_json::json!({"id": i}))
-            .collect();
+        let filtered_items: Vec<Value> = (0..25).map(|i| serde_json::json!({"id": i})).collect();
         let scroll_offset = 20;
         let viewport_height = 10;
 

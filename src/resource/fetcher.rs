@@ -101,8 +101,7 @@ pub async fn fetch_resources_concurrent(
     max_concurrent: usize,
 ) -> Result<Vec<Value>> {
     // First, fetch initial page to see if there are more
-    let first_result =
-        fetch_resources_paginated(resource_key, client, filters, None).await?;
+    let first_result = fetch_resources_paginated(resource_key, client, filters, None).await?;
 
     let mut all_items = first_result.items;
 
@@ -133,8 +132,7 @@ pub async fn fetch_resources_concurrent(
 
             futures.push(async move {
                 let _permit = sem.acquire().await.unwrap();
-                let result =
-                    fetch_resources_paginated(&key, &client, &filters, Some(&token)).await;
+                let result = fetch_resources_paginated(&key, &client, &filters, Some(&token)).await;
                 (batch_idx, result)
             });
         }

@@ -360,8 +360,8 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
             .begin_symbol(Some("↑"))
             .end_symbol(Some("↓"));
 
-        let mut scrollbar_state =
-            ScrollbarState::new(total_items.saturating_sub(visible_height)).position(app.scroll_offset);
+        let mut scrollbar_state = ScrollbarState::new(total_items.saturating_sub(visible_height))
+            .position(app.scroll_offset);
 
         f.render_stateful_widget(scrollbar, inner_area, &mut scrollbar_state);
     }
