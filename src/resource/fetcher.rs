@@ -619,15 +619,14 @@ fn extract_short_name(url: &str) -> String {
 /// Extract vCPUs from machine type name
 /// e.g., `n1-standard-4` -> `4`, `e2-medium` -> `1`, `c2-standard-60` -> `60`
 fn extract_vcpus_from_machine_type(machine_type: &str) -> String {
-    // Handle custom machine types: custom-N-M where N is vCPUs
-    if machine_type.starts_with("custom-") || machine_type.starts_with("n1-custom-") {
-        let parts: Vec<&str> = machine_type.split('-').collect();
-        if parts.len() >= 2 {
-            // For custom-N-M format, vCPUs is after "custom"
-            if let Some(idx) = parts.iter().position(|&p| p == "custom") {
-                if idx + 1 < parts.len() && parts[idx + 1].parse::<u32>().is_ok() {
-                    return parts[idx + 1].to_string();
-                }
+    // Handle custom machine types: [family-]custom-N-M[-ext] where N is vCPUs
+    // Formats: custom-4-8192, n1-custom-4-8192, n2-custom-4-8192, n2-custom-4-8192-ext, etc.
+    let parts: Vec<&str> = machine_type.split('-').collect();
+    if let Some(idx) = parts.iter().position(|&p| p == "custom") {
+        // vCPUs is the part right after "custom"
+        if idx + 1 < parts.len() {
+            if let Ok(vcpus) = parts[idx + 1].parse::<u32>() {
+                return vcpus.to_string();
             }
         }
     }
