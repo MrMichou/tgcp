@@ -3,6 +3,7 @@
 //! Keyboard and event handling for tgcp.
 
 use crate::app::{App, Mode};
+use crate::gcp::client::extract_operation_url;
 use crate::resource::{execute_action, extract_json_value};
 use crate::shell::{self, ShellResult, SshOptions};
 use anyhow::Result;
@@ -34,6 +35,7 @@ async fn handle_key_event(app: &mut App, code: KeyCode, modifiers: KeyModifiers)
         Mode::Projects => handle_projects_mode(app, code, modifiers).await,
         Mode::Zones => handle_zones_mode(app, code, modifiers).await,
         Mode::Describe => handle_describe_mode(app, code, modifiers),
+        Mode::Notifications => handle_notifications_mode(app, code),
     }
 }
 
@@ -173,6 +175,11 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
             app.enter_zones_mode();
         },
 
+        // Notifications
+        KeyCode::Char('n') => {
+            app.enter_notifications_mode();
+        },
+
         // Delete action with Delete key (resolves Ctrl+D conflict)
         KeyCode::Delete => {
             if let Some(resource) = app.current_resource() {
@@ -255,6 +262,13 @@ async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -
             app.enter_confirm_mode(pending);
         }
     } else {
+        // Create notification before executing
+        let notification_id = app.create_operation_notification(
+            &action_def.sdk_method,
+            &resource.service,
+            &resource_id,
+        );
+
         // Execute directly
         let result = execute_action(
             &resource.service,
@@ -266,11 +280,22 @@ async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -
         .await;
 
         match result {
-            Ok(_) => {
+            Ok(response) => {
+                // Extract operation URL for polling
+                let operation_url = extract_operation_url(&response);
+                app.mark_notification_in_progress(notification_id, operation_url.clone());
+
+                // If no operation URL (immediate completion), mark success
+                if operation_url.is_none() {
+                    app.mark_notification_success(notification_id);
+                }
+
                 app.refresh_current().await?;
             },
             Err(e) => {
-                app.error_message = Some(crate::gcp::client::format_gcp_error(&e));
+                let error_msg = crate::gcp::client::format_gcp_error(&e);
+                app.mark_notification_error(notification_id, error_msg.clone());
+                app.error_message = Some(error_msg);
             },
         }
     }
@@ -422,7 +447,7 @@ async fn handle_confirm_mode(
     _modifiers: KeyModifiers,
 ) -> Result<bool> {
     match code {
-        KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+        KeyCode::Esc | KeyCode::Char('N') => {
             app.exit_mode();
         },
         KeyCode::Left | KeyCode::Char('h') => {
@@ -439,6 +464,13 @@ async fn handle_confirm_mode(
             if let Some(pending) = app.pending_action.take() {
                 if pending.selected_yes || code == KeyCode::Char('y') || code == KeyCode::Char('Y')
                 {
+                    // Create notification before executing
+                    let notification_id = app.create_operation_notification(
+                        &pending.sdk_method,
+                        &pending.service,
+                        &pending.resource_id,
+                    );
+
                     // Execute the action
                     let result = execute_action(
                         &pending.service,
@@ -450,11 +482,23 @@ async fn handle_confirm_mode(
                     .await;
 
                     match result {
-                        Ok(_) => {
+                        Ok(response) => {
+                            // Extract operation URL for polling
+                            let operation_url = extract_operation_url(&response);
+                            app.mark_notification_in_progress(notification_id, operation_url.clone());
+
+                            // If no operation URL (immediate completion), mark success
+                            if operation_url.is_none() {
+                                app.mark_notification_success(notification_id);
+                            }
+
+                            // Refresh view (polling will update status)
                             app.refresh_current().await?;
                         },
                         Err(e) => {
-                            app.error_message = Some(crate::gcp::client::format_gcp_error(&e));
+                            let error_msg = crate::gcp::client::format_gcp_error(&e);
+                            app.mark_notification_error(notification_id, error_msg.clone());
+                            app.error_message = Some(error_msg);
                         },
                     }
                 }
@@ -591,6 +635,39 @@ fn handle_describe_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -
         },
         KeyCode::Char('G') | KeyCode::End => {
             app.describe_scroll_to_bottom(30); // Approximate visible lines
+        },
+        _ => {},
+    }
+    Ok(false)
+}
+
+fn handle_notifications_mode(app: &mut App, code: KeyCode) -> Result<bool> {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('n') => {
+            app.exit_mode();
+        },
+        KeyCode::Char('j') | KeyCode::Down => {
+            let count = app.notification_manager.notifications.len();
+            if count > 0 && app.notifications_selected < count - 1 {
+                app.notifications_selected += 1;
+            }
+        },
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.notifications_selected = app.notifications_selected.saturating_sub(1);
+        },
+        KeyCode::Home | KeyCode::Char('g') => {
+            app.notifications_selected = 0;
+        },
+        KeyCode::End | KeyCode::Char('G') => {
+            let count = app.notification_manager.notifications.len();
+            if count > 0 {
+                app.notifications_selected = count - 1;
+            }
+        },
+        KeyCode::Char('c') => {
+            // Clear all notifications
+            app.clear_notifications();
+            app.notifications_selected = 0;
         },
         _ => {},
     }

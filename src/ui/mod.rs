@@ -2,6 +2,7 @@ mod command_box;
 mod dialog;
 mod header;
 mod help;
+mod notifications;
 mod projects;
 pub mod splash;
 mod zones;
@@ -61,6 +62,9 @@ pub fn render(f: &mut Frame, app: &App) {
         },
         Mode::Command => {
             command_box::render(f, app);
+        },
+        Mode::Notifications => {
+            notifications::render(f, app);
         },
         _ => {},
     }
@@ -452,8 +456,28 @@ fn render_crumb(f: &mut Frame, app: &App, area: Rect) {
         String::new()
     };
 
+    // Check for toast notification
+    let toast_text = app.notification_manager.current_toast().map(|notif| {
+        notif.toast_message(app.notification_manager.detail_level)
+    });
+
+    // Build notification indicator
+    let notification_indicator = {
+        let in_progress = app.notification_manager.in_progress_count();
+        let total = app.notification_manager.notifications.len();
+        if in_progress > 0 {
+            format!(" [↻{}]", in_progress)
+        } else if total > 0 {
+            " [n]".to_string()
+        } else {
+            String::new()
+        }
+    };
+
     let status_text = if let Some(err) = &app.error_message {
         format!("Error: {}", err)
+    } else if let Some(ref toast) = toast_text {
+        toast.clone()
     } else if app.loading {
         "Loading...".to_string()
     } else if app.mode == Mode::Describe {
@@ -466,8 +490,33 @@ fn render_crumb(f: &mut Frame, app: &App, area: Rect) {
 
     let style = if app.error_message.is_some() {
         Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+    } else if toast_text.is_some() {
+        // Use different colors based on notification status
+        if let Some(notif) = app.notification_manager.current_toast() {
+            match &notif.status {
+                crate::notification::NotificationStatus::Success => {
+                    Style::default().fg(Color::Green)
+                },
+                crate::notification::NotificationStatus::Error(_) => {
+                    Style::default().fg(Color::Red)
+                },
+                crate::notification::NotificationStatus::InProgress => {
+                    Style::default().fg(Color::Yellow)
+                },
+                _ => Style::default().fg(Color::Cyan),
+            }
+        } else {
+            Style::default().fg(Color::Cyan)
+        }
     } else if app.loading {
         Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    // Build notification indicator style
+    let indicator_style = if app.notification_manager.in_progress_count() > 0 {
+        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
     };
@@ -479,6 +528,7 @@ fn render_crumb(f: &mut Frame, app: &App, area: Rect) {
         ),
         Span::raw(" "),
         Span::styled(status_text, style),
+        Span::styled(notification_indicator, indicator_style),
     ]);
 
     let paragraph = Paragraph::new(crumb);

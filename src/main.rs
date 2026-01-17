@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod event;
 mod gcp;
+mod notification;
 mod resource;
 mod shell;
 mod theme;
@@ -339,6 +340,11 @@ where
 
         if event::handle_events(app).await? {
             return Ok(());
+        }
+
+        // Poll pending operations for notification updates
+        if let Err(e) = app.poll_pending_operations().await {
+            tracing::warn!("Failed to poll pending operations: {}", e);
         }
 
         // Auto-refresh (disabled by default)
