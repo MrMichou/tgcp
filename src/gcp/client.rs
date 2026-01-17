@@ -199,18 +199,6 @@ impl GcpClient {
     // Operations API helpers
     // =========================================================================
 
-    /// Build zonal operations URL
-    #[allow(dead_code)]
-    pub fn compute_zonal_operation_url(&self, operation: &str) -> String {
-        self.compute_url(&format!("zones/{}/operations/{}", self.zone, operation))
-    }
-
-    /// Build global operations URL
-    #[allow(dead_code)]
-    pub fn compute_global_operation_url(&self, operation: &str) -> String {
-        self.compute_url(&format!("global/operations/{}", operation))
-    }
-
     /// Poll a GCP operation until completion
     /// Returns the operation status: "RUNNING", "DONE", or error
     pub async fn poll_operation(&self, operation_url: &str) -> Result<OperationStatus> {
@@ -252,26 +240,10 @@ pub enum OperationStatus {
     Unknown(String),
 }
 
-impl OperationStatus {
-    #[allow(dead_code)]
-    pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Done | Self::Failed(_))
-    }
-}
-
 /// Extract operation self-link URL from a GCP API response
 pub fn extract_operation_url(response: &Value) -> Option<String> {
     response
         .get("selfLink")
-        .and_then(|v| v.as_str())
-        .map(String::from)
-}
-
-/// Extract operation name from a GCP API response
-#[allow(dead_code)]
-pub fn extract_operation_name(response: &Value) -> Option<String> {
-    response
-        .get("name")
         .and_then(|v| v.as_str())
         .map(String::from)
 }
