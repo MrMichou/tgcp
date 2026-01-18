@@ -602,7 +602,7 @@ impl Theme {
     /// Load theme from file
     pub fn load_from_file(path: &PathBuf) -> Result<Self> {
         let content = std::fs::read_to_string(path)?;
-        let theme: Theme = serde_yml::from_str(&content)?;
+        let theme: Theme = serde_yaml::from_str(&content)?;
         Ok(theme)
     }
 }
