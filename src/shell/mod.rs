@@ -1,6 +1,18 @@
 //! Shell Integration
 //!
 //! Handles SSH connections and shell execution for tgcp.
+//!
+//! # Features
+//!
+//! - SSH to VM instances using `gcloud compute ssh`
+//! - IAP tunnel support for instances without external IPs
+//! - Serial console access for debugging
+//! - Browser launch for GCP Console
+//!
+//! # Security
+//!
+//! All SSH arguments are validated against a whitelist to prevent
+//! command injection attacks. See [`validate_ssh_extra_args`] for details.
 
 use anyhow::{anyhow, Context, Result};
 use std::process::{Command, Stdio};
