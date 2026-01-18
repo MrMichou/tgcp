@@ -9,10 +9,15 @@ use serde_json::{json, Value};
 /// Generate arbitrary VM instance data for testing
 fn arb_instance() -> impl Strategy<Value = Value> {
     (
-        "[a-z][a-z0-9-]{0,62}",              // name
+        "[a-z][a-z0-9-]{0,62}", // name
         prop_oneof!["RUNNING", "STOPPED", "TERMINATED", "PENDING", "STAGING"],
-        "[a-z]+-[a-z]+[0-9]-[a-z]",          // zone
-        prop_oneof!["n1-standard-1", "n2-standard-2", "e2-medium", "c2-standard-4"],
+        "[a-z]+-[a-z]+[0-9]-[a-z]", // zone
+        prop_oneof![
+            "n1-standard-1",
+            "n2-standard-2",
+            "e2-medium",
+            "c2-standard-4"
+        ],
     )
         .prop_map(|(name, status, zone, machine_type)| {
             json!({
@@ -182,11 +187,17 @@ mod input_validation_tests {
             return false;
         }
         // Must start with lowercase letter
-        if !s.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false) {
+        if !s
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_lowercase())
+            .unwrap_or(false)
+        {
             return false;
         }
         // Only lowercase letters, digits, and hyphens
-        s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
     }
 
     /// Validate zone format (region-zone, e.g., us-central1-a)
@@ -196,7 +207,9 @@ mod input_validation_tests {
             return false;
         }
         // All parts should be alphanumeric
-        parts.iter().all(|p| p.chars().all(|c| c.is_ascii_alphanumeric()))
+        parts
+            .iter()
+            .all(|p| p.chars().all(|c| c.is_ascii_alphanumeric()))
     }
 
     proptest! {

@@ -24,7 +24,9 @@ mod http_client_tests {
         });
 
         Mock::given(method("GET"))
-            .and(path("/compute/v1/projects/test-project/zones/us-central1-a/instances"))
+            .and(path(
+                "/compute/v1/projects/test-project/zones/us-central1-a/instances",
+            ))
             .and(bearer_token("test-token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
             .mount(&server)
@@ -57,14 +59,12 @@ mod http_client_tests {
 
         Mock::given(method("GET"))
             .and(path("/compute/v1/projects/test-project/instances"))
-            .respond_with(
-                ResponseTemplate::new(401).set_body_json(json!({
-                    "error": {
-                        "code": 401,
-                        "message": "Invalid credentials"
-                    }
-                })),
-            )
+            .respond_with(ResponseTemplate::new(401).set_body_json(json!({
+                "error": {
+                    "code": 401,
+                    "message": "Invalid credentials"
+                }
+            })))
             .mount(&server)
             .await;
 
@@ -90,14 +90,12 @@ mod http_client_tests {
 
         Mock::given(method("GET"))
             .and(path("/compute/v1/projects/restricted-project/instances"))
-            .respond_with(
-                ResponseTemplate::new(403).set_body_json(json!({
-                    "error": {
-                        "code": 403,
-                        "message": "Permission denied"
-                    }
-                })),
-            )
+            .respond_with(ResponseTemplate::new(403).set_body_json(json!({
+                "error": {
+                    "code": 403,
+                    "message": "Permission denied"
+                }
+            })))
             .mount(&server)
             .await;
 
@@ -123,15 +121,15 @@ mod http_client_tests {
         let server = MockServer::start().await;
 
         Mock::given(method("GET"))
-            .and(path("/compute/v1/projects/test-project/zones/invalid-zone/instances"))
-            .respond_with(
-                ResponseTemplate::new(404).set_body_json(json!({
-                    "error": {
-                        "code": 404,
-                        "message": "Zone not found"
-                    }
-                })),
-            )
+            .and(path(
+                "/compute/v1/projects/test-project/zones/invalid-zone/instances",
+            ))
+            .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+                "error": {
+                    "code": 404,
+                    "message": "Zone not found"
+                }
+            })))
             .mount(&server)
             .await;
 
@@ -164,7 +162,9 @@ mod http_client_tests {
         });
 
         Mock::given(method("POST"))
-            .and(path("/compute/v1/projects/test-project/zones/us-central1-a/instances/my-vm/start"))
+            .and(path(
+                "/compute/v1/projects/test-project/zones/us-central1-a/instances/my-vm/start",
+            ))
             .and(bearer_token("test-token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&operation_response))
             .mount(&server)
@@ -202,7 +202,9 @@ mod http_client_tests {
         });
 
         Mock::given(method("DELETE"))
-            .and(path("/compute/v1/projects/test-project/zones/us-central1-a/instances/my-vm"))
+            .and(path(
+                "/compute/v1/projects/test-project/zones/us-central1-a/instances/my-vm",
+            ))
             .and(bearer_token("test-token"))
             .respond_with(ResponseTemplate::new(200).set_body_json(&operation_response))
             .mount(&server)
@@ -260,14 +262,12 @@ mod http_client_tests {
 
         Mock::given(method("GET"))
             .and(path("/rate-limited"))
-            .respond_with(
-                ResponseTemplate::new(429).set_body_json(json!({
-                    "error": {
-                        "code": 429,
-                        "message": "Rate limit exceeded"
-                    }
-                })),
-            )
+            .respond_with(ResponseTemplate::new(429).set_body_json(json!({
+                "error": {
+                    "code": 429,
+                    "message": "Rate limit exceeded"
+                }
+            })))
             .mount(&server)
             .await;
 
