@@ -1,3 +1,34 @@
+//! Terminal User Interface rendering module
+//!
+//! This module handles all UI rendering for tgcp using the ratatui framework.
+//! It provides a composable widget system for displaying GCP resources in a
+//! table format with vim-style navigation.
+//!
+//! # Architecture
+//!
+//! - [`splash`] - Startup splash screen animation
+//! - `header` - Header bar with project/zone info
+//! - `help` - Help overlay showing keybindings
+//! - `dialog` - Confirmation dialogs for destructive operations
+//! - `command_box` - Command mode input (`:` key)
+//! - `projects` - Project selector UI
+//! - `zones` - Zone selector UI
+//! - `notifications` - Toast notifications for async operations
+//!
+//! # Virtual Scrolling
+//!
+//! The table rendering uses virtual scrolling for performance with large datasets.
+//! Only visible rows are rendered, with a scrollbar indicating position.
+//!
+//! # JSON Highlighting
+//!
+//! The describe view provides syntax highlighting for JSON output:
+//! - Keys in cyan
+//! - Strings in green
+//! - Numbers in light blue
+//! - Booleans in magenta
+//! - Null values in dark gray
+
 mod command_box;
 mod dialog;
 mod header;
