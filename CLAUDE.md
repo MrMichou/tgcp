@@ -1,8 +1,36 @@
 # CLAUDE.md - tgcp Development Guide
 
+> AI Assistant Development Guide for tgcp (Terminal UI for GCP)
+
+---
+
+## Table of Contents
+
+- [Project Overview](#project-overview)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Getting Started](#getting-started)
+- [Usage](#usage)
+- [Development](#development)
+- [Testing](#testing)
+- [Contributing](#contributing)
+- [Release Process](#release-process)
+- [Troubleshooting](#troubleshooting)
+
+---
+
 ## Project Overview
 
 **tgcp** (Terminal UI for GCP) is a Rust-based terminal user interface for navigating, observing, and managing Google Cloud Platform resources. It provides a vim-style keyboard-driven experience for interacting with GCP services directly from the terminal.
+
+### Key Features
+
+- **Vim-style navigation** with keyboard shortcuts
+- **Multi-resource support** for Compute, Storage, GKE, Load Balancing
+- **Data-driven architecture** with JSON resource definitions
+- **Theme system** with per-project themes
+- **SSH integration** with IAP tunnel support
+- **Hierarchical navigation** with sub-resources and breadcrumbs
 
 ## Tech Stack
 
@@ -69,7 +97,62 @@ src/
 
 5. **Async Everything**: All GCP API calls are async using tokio runtime.
 
-## Build & Run
+---
+
+## Getting Started
+
+### Prerequisites
+
+- **Rust**: 1.70+ (2021 edition)
+- **gcloud CLI**: Authenticated and configured
+- **GCP Project**: With appropriate IAM permissions
+
+### Authentication
+
+The app uses Application Default Credentials (ADC). Ensure you're authenticated:
+
+```bash
+gcloud auth application-default login
+```
+
+The app reads default project/zone from gcloud config:
+
+```bash
+gcloud config get-value project
+gcloud config get-value compute/zone
+```
+
+### Installation
+
+#### From Source
+
+```bash
+git clone https://github.com/mnicolet/tgcp.git
+cd tgcp
+cargo build --release
+./target/release/tgcp
+```
+
+#### From GitHub Releases
+
+Download pre-built binaries from the [releases page](https://github.com/mnicolet/tgcp/releases):
+
+```bash
+# Linux x86_64
+curl -L https://github.com/mnicolet/tgcp/releases/latest/download/tgcp-linux-x86_64.tar.gz | tar xz
+
+# macOS (Apple Silicon)
+curl -L https://github.com/mnicolet/tgcp/releases/latest/download/tgcp-darwin-aarch64.tar.gz | tar xz
+
+# Move to PATH
+sudo mv tgcp /usr/local/bin/
+```
+
+---
+
+## Usage
+
+### Build & Run
 
 ```bash
 # Development build
@@ -296,29 +379,62 @@ In `~/.config/tgcp/config.json`:
 - Use kebab-case for resource keys
 - Computed fields use `_short`, `_display`, or `_count` suffixes
 
-## Testing
+---
+
+## Development
+
+### Development Workflow
+
+1. **Clone the repository**
 
 ```bash
-# Run all tests
-cargo test
-
-# Run specific test
-cargo test test_registry_loads_successfully
-
-# Run with output
-cargo test -- --nocapture
+git clone https://github.com/mnicolet/tgcp.git
+cd tgcp
 ```
 
-## Common Development Tasks
+2. **Create a feature branch**
 
-### Debug API Calls
+```bash
+git checkout -b feature/my-feature
+```
+
+3. **Make changes and test**
+
+```bash
+cargo test
+cargo run
+```
+
+4. **Format and lint**
+
+```bash
+cargo fmt
+cargo clippy
+```
+
+5. **Commit and push**
+
+```bash
+git commit -m "feat: add my feature"
+git push origin feature/my-feature
+```
+
+6. **Create a pull request** on GitHub
+
+### Common Development Tasks
+
+#### Debug API Calls
+
 Enable trace logging to see all HTTP requests:
+
 ```bash
 cargo run -- --log-level trace
 ```
 
-### Add New Color Map
+#### Add New Color Map
+
 Edit `src/resources/common.json`:
+
 ```json
 "color_maps": {
   "my_status": [
@@ -328,8 +444,10 @@ Edit `src/resources/common.json`:
 }
 ```
 
-### Add Sub-Resource Navigation
+#### Add Sub-Resource Navigation
+
 In the parent resource definition:
+
 ```json
 "sub_resources": [
   {
@@ -342,7 +460,8 @@ In the parent resource definition:
 ]
 ```
 
-### Add Resource Action
+#### Add Resource Action
+
 ```json
 "actions": [
   {
@@ -359,22 +478,120 @@ In the parent resource definition:
 ]
 ```
 
-## GCP Authentication
+---
 
-The app uses Application Default Credentials (ADC). Ensure you're authenticated:
+## Testing
+
 ```bash
-gcloud auth application-default login
+# Run all tests
+cargo test
+
+# Run specific test
+cargo test test_registry_loads_successfully
+
+# Run with output
+cargo test -- --nocapture
 ```
 
-The app reads default project/zone from gcloud config:
-```bash
-gcloud config get-value project
-gcloud config get-value compute/zone
+---
+
+## Contributing
+
+We welcome contributions! Please follow these guidelines:
+
+### Code Style
+
+- Follow Rust standard conventions (use `cargo fmt`)
+- Run `cargo clippy` and address all warnings
+- Add tests for new features
+- Update documentation as needed
+
+### Pull Request Process
+
+1. Fork the repository
+2. Create a feature branch from `main`
+3. Make your changes with clear, descriptive commits
+4. Ensure all tests pass (`cargo test`)
+5. Update CLAUDE.md if you change architecture or add features
+6. Submit a pull request with a clear description
+
+### Commit Message Format
+
+Follow conventional commits:
+
+```
+feat: add support for Cloud Run services
+fix: resolve authentication timeout issue
+docs: update installation instructions
+chore: bump dependencies to latest versions
 ```
 
-## Version Management
+---
+
+## Release Process
+
+### Version Management
 
 Version is injected at compile time via `TGCP_VERSION` environment variable (for CI/CD). Local builds show "dev" version.
+
+### Creating a Release
+
+Releases are automated via GitHub Actions. To create a new release:
+
+1. **Update version** in `Cargo.toml`:
+
+```toml
+[package]
+version = "0.2.0"
+```
+
+2. **Commit and push** the version bump:
+
+```bash
+git add Cargo.toml
+git commit -m "chore: bump version to 0.2.0"
+git push origin main
+```
+
+3. **Create and push a git tag**:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+4. **GitHub Actions will automatically**:
+   - Create a draft release on GitHub
+   - Build binaries for all platforms:
+     - Linux (x86_64 GNU, x86_64 musl, ARM64)
+     - macOS (x86_64, ARM64/Apple Silicon)
+     - Windows (x86_64)
+   - Upload binaries with SHA256 checksums
+   - Publish the release
+
+### Manual Release (workflow_dispatch)
+
+You can also trigger a release manually from GitHub Actions:
+
+1. Go to **Actions** → **Release** workflow
+2. Click **Run workflow**
+3. Enter the tag (e.g., `v0.2.0`)
+4. Click **Run workflow**
+
+### Supported Platforms
+
+The release workflow builds for:
+
+| Platform | Target | Binary Name |
+|----------|--------|-------------|
+| Linux x86_64 (GNU) | `x86_64-unknown-linux-gnu` | `tgcp-linux-x86_64.tar.gz` |
+| Linux x86_64 (musl) | `x86_64-unknown-linux-musl` | `tgcp-linux-x86_64-musl.tar.gz` |
+| Linux ARM64 | `aarch64-unknown-linux-gnu` | `tgcp-linux-aarch64.tar.gz` |
+| macOS x86_64 | `x86_64-apple-darwin` | `tgcp-darwin-x86_64.tar.gz` |
+| macOS ARM64 | `aarch64-apple-darwin` | `tgcp-darwin-aarch64.tar.gz` |
+| Windows x86_64 | `x86_64-pc-windows-msvc` | `tgcp-windows-x86_64.zip` |
+
+---
 
 ## Supported GCP Resources
 
@@ -423,3 +640,18 @@ Try resizing your terminal window, or check if your terminal supports 256 colors
 
 ### API rate limits
 The app doesn't implement retry logic. Wait a moment and try again if you hit rate limits.
+
+---
+
+## License
+
+tgcp is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+---
+
+## Additional Resources
+
+- **Repository**: https://github.com/mnicolet/tgcp
+- **Issues**: https://github.com/mnicolet/tgcp/issues
+- **Releases**: https://github.com/mnicolet/tgcp/releases
+- **GCP Documentation**: https://cloud.google.com/docs
