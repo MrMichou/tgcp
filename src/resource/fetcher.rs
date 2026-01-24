@@ -51,7 +51,8 @@ impl MetricsHistory {
         self.values.get(instance_id)
     }
 
-    /// Clear all history
+    /// Clear all history (utility method for future use)
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.values.clear();
     }
