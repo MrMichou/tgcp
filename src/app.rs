@@ -7,7 +7,7 @@ use crate::gcp::client::{GcpClient, OperationStatus};
 use crate::notification::{DetailLevel, NotificationManager, OperationType, SoundConfig};
 use crate::resource::{
     enrich_with_metrics, extract_json_value, fetch_resources_paginated, get_all_resource_keys,
-    get_resource, ResourceDef, ResourceFilter,
+    get_resource, MetricsHistory, ResourceDef, ResourceFilter,
 };
 use crate::theme::ThemeManager;
 use anyhow::Result;
@@ -146,6 +146,9 @@ pub struct App {
     // Multi-selection (bulk operations)
     pub selected_indices: HashSet<usize>,
     pub visual_mode: bool,
+
+    // Metrics history for trend calculation
+    pub metrics_history: MetricsHistory,
 }
 
 impl App {
@@ -229,6 +232,8 @@ impl App {
             // Multi-selection
             selected_indices: HashSet::new(),
             visual_mode: false,
+            // Metrics history
+            metrics_history: MetricsHistory::default(),
         }
     }
 
@@ -312,7 +317,10 @@ impl App {
 
                 // Enrich VM instances with monitoring metrics
                 if self.current_resource_key == "compute-instances" {
-                    if let Err(e) = enrich_with_metrics(&mut self.items, &self.client).await {
+                    if let Err(e) =
+                        enrich_with_metrics(&mut self.items, &self.client, &mut self.metrics_history)
+                            .await
+                    {
                         tracing::debug!("Failed to enrich with metrics: {}", e);
                     }
                 }
