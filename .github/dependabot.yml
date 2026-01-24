@@ -1,7 +1,7 @@
 # Dependabot configuration
 # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
-version: 2
+version: 3
 
 updates:
   # Rust dependencies (Cargo)
