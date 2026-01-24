@@ -4,6 +4,8 @@
 
 [![CI](https://github.com/MrMichou/tgcp/actions/workflows/ci.yml/badge.svg)](https://github.com/MrMichou/tgcp/actions/workflows/ci.yml)
 [![Security](https://github.com/MrMichou/tgcp/actions/workflows/security.yml/badge.svg)](https://github.com/MrMichou/tgcp/actions/workflows/security.yml)
+[![Release](https://github.com/MrMichou/tgcp/actions/workflows/release.yml/badge.svg)](https://github.com/MrMichou/tgcp/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/MrMichou/tgcp)](https://github.com/MrMichou/tgcp/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
 
@@ -43,6 +45,32 @@ A fast, keyboard-driven terminal interface for navigating and managing Google Cl
 - **Async & fast** - Non-blocking API calls with pagination support
 
 ## Installation
+
+### From pre-built binaries (recommended)
+
+Download the latest release for your platform from the [releases page](https://github.com/MrMichou/tgcp/releases/latest):
+
+```bash
+# Linux x86_64 (GNU)
+curl -L https://github.com/MrMichou/tgcp/releases/latest/download/tgcp-linux-x86_64.tar.gz | tar xz
+sudo mv tgcp /usr/local/bin/
+
+# Linux x86_64 (musl - static binary)
+curl -L https://github.com/MrMichou/tgcp/releases/latest/download/tgcp-linux-x86_64-musl.tar.gz | tar xz
+sudo mv tgcp /usr/local/bin/
+
+# macOS (Apple Silicon)
+curl -L https://github.com/MrMichou/tgcp/releases/latest/download/tgcp-darwin-aarch64.tar.gz | tar xz
+sudo mv tgcp /usr/local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/MrMichou/tgcp/releases/latest/download/tgcp-darwin-x86_64.tar.gz | tar xz
+sudo mv tgcp /usr/local/bin/
+
+# Windows (PowerShell)
+Invoke-WebRequest -Uri "https://github.com/MrMichou/tgcp/releases/latest/download/tgcp-windows-x86_64.zip" -OutFile "tgcp.zip"
+Expand-Archive -Path "tgcp.zip" -DestinationPath "."
+```
 
 ### From source
 
