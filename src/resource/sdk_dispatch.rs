@@ -20,6 +20,7 @@ pub async fn invoke_sdk(
         "storage" => invoke_storage(method, client, params).await,
         "container" => invoke_container(method, client, params).await,
         "billing" => invoke_billing(method, client, params).await,
+        "monitoring" => invoke_monitoring(method, client, params).await,
         _ => Err(anyhow::anyhow!("Unknown service: {}", service)),
     }
 }
@@ -659,6 +660,182 @@ fn extract_sku_price(sku: &serde_json::Map<String, Value>) -> (String, String) {
     };
 
     (price, unit)
+}
+
+// =============================================================================
+// Cloud Monitoring
+// =============================================================================
+
+async fn invoke_monitoring(method: &str, client: &GcpClient, params: &Value) -> Result<Value> {
+    match method {
+        "get_instance_metrics" => {
+            // Get list of instance IDs from params
+            let instance_ids = params
+                .get("instance_ids")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            if instance_ids.is_empty() {
+                return Ok(serde_json::json!({ "metrics": {} }));
+            }
+
+            // Build time range (last 5 minutes)
+            let now = chrono::Utc::now();
+            let start = now - chrono::Duration::minutes(5);
+            let end_time = now.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+            let start_time = start.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
+            // Build instance filter for multiple instances
+            let instance_filter: Vec<String> = instance_ids
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(|id| format!("resource.labels.instance_id = \"{}\"", id))
+                .collect();
+
+            if instance_filter.is_empty() {
+                return Ok(serde_json::json!({ "metrics": {} }));
+            }
+
+            let instance_filter_str = format!("({})", instance_filter.join(" OR "));
+
+            // Fetch all metrics in parallel
+            let metrics =
+                fetch_instance_metrics_batch(client, &instance_filter_str, &start_time, &end_time)
+                    .await?;
+
+            Ok(serde_json::json!({ "metrics": metrics }))
+        },
+        _ => Err(anyhow::anyhow!("Unknown monitoring method: {}", method)),
+    }
+}
+
+/// Fetch all instance metrics in batch
+async fn fetch_instance_metrics_batch(
+    client: &GcpClient,
+    instance_filter: &str,
+    start_time: &str,
+    end_time: &str,
+) -> Result<serde_json::Map<String, Value>> {
+    use futures::future::join_all;
+
+    // Define metrics to fetch
+    let metric_types = [
+        ("cpu", "compute.googleapis.com/instance/cpu/utilization"),
+        (
+            "network_in",
+            "compute.googleapis.com/instance/network/received_bytes_count",
+        ),
+        (
+            "network_out",
+            "compute.googleapis.com/instance/network/sent_bytes_count",
+        ),
+        (
+            "disk_read",
+            "compute.googleapis.com/instance/disk/read_bytes_count",
+        ),
+        (
+            "disk_write",
+            "compute.googleapis.com/instance/disk/write_bytes_count",
+        ),
+    ];
+
+    // Fetch all metrics concurrently
+    let futures: Vec<_> = metric_types
+        .iter()
+        .map(|(name, metric_type)| {
+            fetch_single_metric(
+                client,
+                metric_type,
+                instance_filter,
+                start_time,
+                end_time,
+                name,
+            )
+        })
+        .collect();
+
+    let results = join_all(futures).await;
+
+    // Merge results by instance ID
+    let mut metrics_by_instance: serde_json::Map<String, Value> = serde_json::Map::new();
+
+    for (metric_name, instance_metrics) in results.into_iter().flatten() {
+        for (instance_id, value) in instance_metrics {
+            let entry = metrics_by_instance
+                .entry(instance_id)
+                .or_insert_with(|| serde_json::json!({}));
+            if let Value::Object(obj) = entry {
+                obj.insert(metric_name.clone(), value);
+            }
+        }
+    }
+
+    Ok(metrics_by_instance)
+}
+
+/// Fetch a single metric type for all instances
+async fn fetch_single_metric(
+    client: &GcpClient,
+    metric_type: &str,
+    instance_filter: &str,
+    start_time: &str,
+    end_time: &str,
+    metric_name: &str,
+) -> Result<(String, Vec<(String, Value)>)> {
+    let filter = format!("metric.type = \"{}\" AND {}", metric_type, instance_filter);
+
+    // Build URL with query parameters
+    let base_url = client.monitoring_url("timeSeries");
+    let url = format!(
+        "{}?filter={}&interval.startTime={}&interval.endTime={}&aggregation.alignmentPeriod=300s&aggregation.perSeriesAligner=ALIGN_MEAN",
+        base_url,
+        urlencoding::encode(&filter),
+        urlencoding::encode(start_time),
+        urlencoding::encode(end_time)
+    );
+
+    let response = client.get(&url).await;
+
+    let mut instance_metrics: Vec<(String, Value)> = Vec::new();
+
+    if let Ok(data) = response {
+        if let Some(time_series) = data.get("timeSeries").and_then(|v| v.as_array()) {
+            for series in time_series {
+                // Extract instance ID from resource labels
+                let instance_id = series
+                    .get("resource")
+                    .and_then(|r| r.get("labels"))
+                    .and_then(|l| l.get("instance_id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                if instance_id.is_empty() {
+                    continue;
+                }
+
+                // Get the latest point value
+                let value = series
+                    .get("points")
+                    .and_then(|p| p.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|point| point.get("value"))
+                    .and_then(|v| {
+                        // Value can be doubleValue, int64Value, etc.
+                        v.get("doubleValue").and_then(|d| d.as_f64()).or_else(|| {
+                            v.get("int64Value")
+                                .and_then(|i| i.as_str())
+                                .and_then(|s| s.parse::<f64>().ok())
+                        })
+                    })
+                    .unwrap_or(0.0);
+
+                instance_metrics.push((instance_id.to_string(), Value::from(value)));
+            }
+        }
+    }
+
+    Ok((metric_name.to_string(), instance_metrics))
 }
 
 // =============================================================================

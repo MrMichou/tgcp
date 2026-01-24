@@ -6,8 +6,8 @@ use crate::config::Config;
 use crate::gcp::client::{GcpClient, OperationStatus};
 use crate::notification::{DetailLevel, NotificationManager, OperationType, SoundConfig};
 use crate::resource::{
-    extract_json_value, fetch_resources_paginated, get_all_resource_keys, get_resource,
-    ResourceDef, ResourceFilter,
+    enrich_with_metrics, extract_json_value, fetch_resources_paginated, get_all_resource_keys,
+    get_resource, ResourceDef, ResourceFilter,
 };
 use crate::theme::ThemeManager;
 use anyhow::Result;
@@ -309,6 +309,14 @@ impl App {
             Ok(result) => {
                 let prev_selected = self.selected;
                 self.items = result.items;
+
+                // Enrich VM instances with monitoring metrics
+                if self.current_resource_key == "compute-instances" {
+                    if let Err(e) = enrich_with_metrics(&mut self.items, &self.client).await {
+                        tracing::debug!("Failed to enrich with metrics: {}", e);
+                    }
+                }
+
                 self.apply_filter();
 
                 self.pagination.has_more = result.next_token.is_some();

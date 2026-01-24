@@ -166,6 +166,18 @@ impl GcpClient {
     }
 
     // =========================================================================
+    // Cloud Monitoring API helpers
+    // =========================================================================
+
+    /// Build Cloud Monitoring API URL
+    pub fn monitoring_url(&self, path: &str) -> String {
+        format!(
+            "https://monitoring.googleapis.com/v3/projects/{}/{}",
+            self.project_id, path
+        )
+    }
+
+    // =========================================================================
     // Resource Manager API helpers
     // =========================================================================
 

@@ -12,14 +12,15 @@
       "is_regional": false,
       "columns": [
         { "header": "NAME", "json_path": "name", "width": 25 },
-        { "header": "STATUS", "json_path": "status", "width": 12, "color_map": "status" },
+        { "header": "STATUS", "json_path": "status", "width": 10, "color_map": "status" },
         { "header": "ZONE", "json_path": "zone_short", "width": 15 },
-        { "header": "MACHINE TYPE", "json_path": "machineType_short", "width": 15 },
-        { "header": "vCPUs", "json_path": "vcpus", "width": 6 },
-        { "header": "TYPE", "json_path": "scheduling_display", "width": 8 },
-        { "header": "DISKS", "json_path": "disks_count", "width": 6 },
-        { "header": "INTERNAL IP", "json_path": "networkInterfaces.0.networkIP", "width": 15 },
-        { "header": "CREATED", "json_path": "creationTimestamp_short", "width": 12 }
+        { "header": "TYPE", "json_path": "machineType_short", "width": 14 },
+        { "header": "CPU", "json_path": "metrics_cpu", "width": 7 },
+        { "header": "NET IN", "json_path": "metrics_net_in", "width": 10 },
+        { "header": "NET OUT", "json_path": "metrics_net_out", "width": 10 },
+        { "header": "DISK R", "json_path": "metrics_disk_read", "width": 10 },
+        { "header": "DISK W", "json_path": "metrics_disk_write", "width": 10 },
+        { "header": "IP", "json_path": "networkInterfaces.0.networkIP", "width": 15 }
       ],
       "sub_resources": [
         {
