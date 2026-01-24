@@ -35,6 +35,8 @@ A fast, keyboard-driven terminal interface for navigating and managing Google Cl
 - **Hierarchical browsing** - Navigate from VMs to disks, buckets to objects
 - **Resource actions** - Start, stop, reset, delete with confirmation dialogs
 - **SSH integration** - Connect to VMs with `x`, IAP tunneling with `X`
+- **Cloud Monitoring metrics** - Live CPU, RAM, Disk I/O, Network stats for VMs with trend indicators
+- **Column configuration** - Show/hide columns per resource type with `o` key
 - **Theme system** - 7 built-in themes with per-project support
 - **Real-time filtering** - Instant search across resource lists
 - **Project/zone switching** - Quick context changes without leaving the app
@@ -134,12 +136,13 @@ cargo install --path .
 | `Enter` / `d` | View resource details (JSON) |
 | `s` | Start instance |
 | `S` | Stop instance |
-| `r` | Reset instance |
+| `Ctrl+r` | Reset instance |
 | `x` | SSH to instance |
 | `X` | SSH via IAP tunnel |
 | `C` | Open in GCP Console |
 | `Ctrl+d` | Delete resource (with confirmation) |
 | `R` | Refresh current view |
+| `o` | Configure visible columns |
 
 ### Context
 
@@ -240,6 +243,9 @@ Configuration is stored at `~/.config/tgcp/config.json`:
   "ssh": {
     "use_iap": false,
     "extra_args": []
+  },
+  "hidden_columns": {
+    "compute-instances": ["DISK R", "DISK W", "NET OUT"]
   }
 }
 ```
