@@ -683,6 +683,139 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
+/// Enrich VM instances with monitoring metrics (CPU, Network, Disk IO)
+/// This function fetches metrics from Cloud Monitoring API and merges them into the items
+pub async fn enrich_with_metrics(
+    items: &mut [Value],
+    client: &crate::gcp::client::GcpClient,
+) -> Result<()> {
+    use super::sdk_dispatch;
+
+    if items.is_empty() {
+        return Ok(());
+    }
+
+    // Collect instance IDs
+    let instance_ids: Vec<Value> = items
+        .iter()
+        .filter_map(|item| {
+            item.get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| Value::String(s.to_string()))
+        })
+        .collect();
+
+    if instance_ids.is_empty() {
+        return Ok(());
+    }
+
+    // Fetch metrics for all instances
+    let params = serde_json::json!({
+        "instance_ids": instance_ids
+    });
+
+    let metrics_result =
+        sdk_dispatch::invoke_sdk("monitoring", "get_instance_metrics", client, &params).await;
+
+    let metrics_map = match metrics_result {
+        Ok(data) => data
+            .get("metrics")
+            .and_then(|v| v.as_object())
+            .cloned()
+            .unwrap_or_default(),
+        Err(e) => {
+            tracing::debug!("Failed to fetch monitoring metrics: {}", e);
+            return Ok(()); // Don't fail the whole operation, just skip metrics
+        },
+    };
+
+    // Merge metrics into items
+    for item in items.iter_mut() {
+        if let Value::Object(ref mut map) = item {
+            let instance_id = map.get("id").and_then(|v| v.as_str()).unwrap_or("");
+
+            if let Some(instance_metrics) = metrics_map.get(instance_id) {
+                // CPU utilization (0-1 -> percentage)
+                let cpu = instance_metrics
+                    .get("cpu")
+                    .and_then(|v| v.as_f64())
+                    .map(|v| format!("{:.1}%", v * 100.0))
+                    .unwrap_or_else(|| "-".to_string());
+                map.insert("metrics_cpu".to_string(), Value::String(cpu));
+
+                // Network In (bytes/sec -> human readable)
+                let net_in = instance_metrics
+                    .get("network_in")
+                    .and_then(|v| v.as_f64())
+                    .map(format_bytes_per_sec)
+                    .unwrap_or_else(|| "-".to_string());
+                map.insert("metrics_net_in".to_string(), Value::String(net_in));
+
+                // Network Out (bytes/sec -> human readable)
+                let net_out = instance_metrics
+                    .get("network_out")
+                    .and_then(|v| v.as_f64())
+                    .map(format_bytes_per_sec)
+                    .unwrap_or_else(|| "-".to_string());
+                map.insert("metrics_net_out".to_string(), Value::String(net_out));
+
+                // Disk Read (bytes/sec -> human readable)
+                let disk_read = instance_metrics
+                    .get("disk_read")
+                    .and_then(|v| v.as_f64())
+                    .map(format_bytes_per_sec)
+                    .unwrap_or_else(|| "-".to_string());
+                map.insert("metrics_disk_read".to_string(), Value::String(disk_read));
+
+                // Disk Write (bytes/sec -> human readable)
+                let disk_write = instance_metrics
+                    .get("disk_write")
+                    .and_then(|v| v.as_f64())
+                    .map(format_bytes_per_sec)
+                    .unwrap_or_else(|| "-".to_string());
+                map.insert("metrics_disk_write".to_string(), Value::String(disk_write));
+            } else {
+                // No metrics available for this instance
+                map.insert("metrics_cpu".to_string(), Value::String("-".to_string()));
+                map.insert("metrics_net_in".to_string(), Value::String("-".to_string()));
+                map.insert(
+                    "metrics_net_out".to_string(),
+                    Value::String("-".to_string()),
+                );
+                map.insert(
+                    "metrics_disk_read".to_string(),
+                    Value::String("-".to_string()),
+                );
+                map.insert(
+                    "metrics_disk_write".to_string(),
+                    Value::String("-".to_string()),
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Format bytes per second to human-readable format
+fn format_bytes_per_sec(bytes: f64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+
+    if bytes >= GB {
+        format!("{:.1}GB/s", bytes / GB)
+    } else if bytes >= MB {
+        format!("{:.1}MB/s", bytes / MB)
+    } else if bytes >= KB {
+        format!("{:.1}KB/s", bytes / KB)
+    } else if bytes > 0.0 {
+        format!("{:.0}B/s", bytes)
+    } else {
+        "0".to_string()
+    }
+}
+
 /// Extract a value from JSON using a dot-notation path
 pub fn extract_json_value(item: &Value, path: &str) -> String {
     let parts: Vec<&str> = path.split('.').collect();
