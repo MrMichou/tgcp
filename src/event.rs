@@ -10,9 +10,22 @@ use anyhow::Result;
 use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
 use std::time::Duration;
 
+// =========================================================================
+// Configuration Constants
+// =========================================================================
+
+/// Timeout for double-key sequences like 'gg' (go to top)
+const DOUBLE_KEY_TIMEOUT_MS: u64 = 1000;
+
+/// Number of items to scroll for page up/down
+const PAGE_SCROLL_SIZE: usize = 10;
+
+/// Event poll interval in milliseconds
+const EVENT_POLL_INTERVAL_MS: u64 = 100;
+
 /// Handle events, returns true if app should quit
 pub async fn handle_events(app: &mut App) -> Result<bool> {
-    if poll(Duration::from_millis(100))? {
+    if poll(Duration::from_millis(EVENT_POLL_INTERVAL_MS))? {
         if let Event::Key(key) = read()? {
             return handle_key_event(app, key.code, key.modifiers).await;
         }
@@ -44,7 +57,7 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
     // Check for double-g (go to top) - keep for vim users but increase timeout
     if code == KeyCode::Char('g') {
         if let Some((KeyCode::Char('g'), time)) = app.last_key_press {
-            if time.elapsed() < Duration::from_millis(1000) {
+            if time.elapsed() < Duration::from_millis(DOUBLE_KEY_TIMEOUT_MS) {
                 app.go_to_top();
                 app.last_key_press = None;
                 return Ok(false);
@@ -115,15 +128,15 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         KeyCode::Char('k') | KeyCode::Up => app.previous(),
         KeyCode::Home => app.go_to_top(),
         KeyCode::End | KeyCode::Char('G') => app.go_to_bottom(),
-        KeyCode::PageDown => app.page_down(10),
-        KeyCode::PageUp => app.page_up(10),
+        KeyCode::PageDown => app.page_down(PAGE_SCROLL_SIZE),
+        KeyCode::PageUp => app.page_up(PAGE_SCROLL_SIZE),
 
         // Ctrl+D/U for page navigation
         KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-            app.page_down(10);
+            app.page_down(PAGE_SCROLL_SIZE);
         },
         KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-            app.page_up(10);
+            app.page_up(PAGE_SCROLL_SIZE);
         },
 
         // Quick jump to position 1-9
@@ -390,6 +403,47 @@ async fn handle_bulk_action(
     Ok(())
 }
 
+/// Execute SSH to an instance with proper terminal handling and error reporting
+fn execute_ssh_to_instance(
+    app: &mut App,
+    resource_id: &str,
+    item: &serde_json::Value,
+    force_iap: bool,
+) {
+    // Get zone from the instance if available
+    let zone = extract_json_value(item, "zone_short");
+    let zone = if zone != "-" { zone } else { app.zone.clone() };
+
+    // Build SSH options
+    let mut opts = SshOptions::new(resource_id, &zone, &app.project);
+
+    // Apply IAP: either forced (for ssh_instance_iap) or from config
+    if force_iap || app.config.ssh.use_iap {
+        opts = opts.with_iap();
+    }
+    opts.extra_args = app.config.ssh.extra_args.clone();
+
+    let iap_label = if opts.use_iap { " (IAP)" } else { "" };
+
+    // Execute SSH with terminal handling
+    let result = shell::execute_with_terminal_handling(|| shell::ssh_to_instance(&opts));
+
+    match result {
+        Ok(ShellResult::Success) => {
+            tracing::info!("SSH{} session completed successfully", iap_label);
+        },
+        Ok(ShellResult::Failed(code)) => {
+            app.error_message = Some(format!("SSH{} exited with code {}", iap_label, code));
+        },
+        Ok(ShellResult::Error(msg)) => {
+            app.error_message = Some(msg);
+        },
+        Err(e) => {
+            app.error_message = Some(format!("SSH{} error: {}", iap_label, e));
+        },
+    }
+}
+
 /// Handle shell actions like SSH, console URL, etc.
 async fn handle_shell_action(
     app: &mut App,
@@ -401,59 +455,10 @@ async fn handle_shell_action(
 
     match method {
         "ssh_instance" => {
-            // Get zone from the instance if available
-            let zone = extract_json_value(item, "zone_short");
-            let zone = if zone != "-" { zone } else { app.zone.clone() };
-
-            let mut opts = SshOptions::new(resource_id, &zone, &app.project);
-
-            // Apply config settings
-            if app.config.ssh.use_iap {
-                opts = opts.with_iap();
-            }
-            opts.extra_args = app.config.ssh.extra_args.clone();
-
-            // Execute SSH with terminal handling
-            let result = shell::execute_with_terminal_handling(|| shell::ssh_to_instance(&opts));
-
-            match result {
-                Ok(ShellResult::Success) => {
-                    tracing::info!("SSH session completed successfully");
-                },
-                Ok(ShellResult::Failed(code)) => {
-                    app.error_message = Some(format!("SSH exited with code {}", code));
-                },
-                Ok(ShellResult::Error(msg)) => {
-                    app.error_message = Some(msg);
-                },
-                Err(e) => {
-                    app.error_message = Some(format!("SSH error: {}", e));
-                },
-            }
+            execute_ssh_to_instance(app, resource_id, item, false);
         },
         "ssh_instance_iap" => {
-            let zone = extract_json_value(item, "zone_short");
-            let zone = if zone != "-" { zone } else { app.zone.clone() };
-
-            let mut opts = SshOptions::new(resource_id, &zone, &app.project).with_iap();
-            opts.extra_args = app.config.ssh.extra_args.clone();
-
-            let result = shell::execute_with_terminal_handling(|| shell::ssh_to_instance(&opts));
-
-            match result {
-                Ok(ShellResult::Success) => {
-                    tracing::info!("SSH (IAP) session completed successfully");
-                },
-                Ok(ShellResult::Failed(code)) => {
-                    app.error_message = Some(format!("SSH (IAP) exited with code {}", code));
-                },
-                Ok(ShellResult::Error(msg)) => {
-                    app.error_message = Some(msg);
-                },
-                Err(e) => {
-                    app.error_message = Some(format!("SSH (IAP) error: {}", e));
-                },
-            }
+            execute_ssh_to_instance(app, resource_id, item, true);
         },
         "open_console" => {
             let zone = extract_json_value(item, "zone_short");
@@ -670,17 +675,26 @@ fn handle_warning_mode(app: &mut App, code: KeyCode) -> Result<bool> {
     Ok(false)
 }
 
-async fn handle_projects_mode(
+/// Selector type for generic selector mode handling
+enum SelectorType {
+    Projects,
+    Zones,
+}
+
+/// Generic handler for selector modes (projects/zones) to avoid code duplication
+async fn handle_selector_mode(
     app: &mut App,
     code: KeyCode,
     modifiers: KeyModifiers,
+    selector_type: SelectorType,
 ) -> Result<bool> {
     match code {
         KeyCode::Esc => {
             app.exit_mode();
         },
-        KeyCode::Enter => {
-            app.select_project().await?;
+        KeyCode::Enter => match selector_type {
+            SelectorType::Projects => app.select_project().await?,
+            SelectorType::Zones => app.select_zone().await?,
         },
         KeyCode::Char('j') | KeyCode::Down => {
             app.next();
@@ -695,61 +709,46 @@ async fn handle_projects_mode(
             app.go_to_bottom();
         },
         KeyCode::PageDown => {
-            app.page_down(10);
+            app.page_down(PAGE_SCROLL_SIZE);
         },
         KeyCode::PageUp => {
-            app.page_up(10);
+            app.page_up(PAGE_SCROLL_SIZE);
         },
-        KeyCode::Backspace => {
-            app.projects_search_text.pop();
-            app.apply_projects_filter();
+        KeyCode::Backspace => match selector_type {
+            SelectorType::Projects => {
+                app.projects_search_text.pop();
+                app.apply_projects_filter();
+            },
+            SelectorType::Zones => {
+                app.zones_search_text.pop();
+                app.apply_zones_filter();
+            },
         },
-        KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => {
-            app.projects_search_text.push(c);
-            app.apply_projects_filter();
+        KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => match selector_type {
+            SelectorType::Projects => {
+                app.projects_search_text.push(c);
+                app.apply_projects_filter();
+            },
+            SelectorType::Zones => {
+                app.zones_search_text.push(c);
+                app.apply_zones_filter();
+            },
         },
         _ => {},
     }
     Ok(false)
 }
 
+async fn handle_projects_mode(
+    app: &mut App,
+    code: KeyCode,
+    modifiers: KeyModifiers,
+) -> Result<bool> {
+    handle_selector_mode(app, code, modifiers, SelectorType::Projects).await
+}
+
 async fn handle_zones_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
-    match code {
-        KeyCode::Esc => {
-            app.exit_mode();
-        },
-        KeyCode::Enter => {
-            app.select_zone().await?;
-        },
-        KeyCode::Char('j') | KeyCode::Down => {
-            app.next();
-        },
-        KeyCode::Char('k') | KeyCode::Up => {
-            app.previous();
-        },
-        KeyCode::Home => {
-            app.go_to_top();
-        },
-        KeyCode::End | KeyCode::Char('G') => {
-            app.go_to_bottom();
-        },
-        KeyCode::PageDown => {
-            app.page_down(10);
-        },
-        KeyCode::PageUp => {
-            app.page_up(10);
-        },
-        KeyCode::Backspace => {
-            app.zones_search_text.pop();
-            app.apply_zones_filter();
-        },
-        KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => {
-            app.zones_search_text.push(c);
-            app.apply_zones_filter();
-        },
-        _ => {},
-    }
-    Ok(false)
+    handle_selector_mode(app, code, modifiers, SelectorType::Zones).await
 }
 
 fn handle_describe_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {

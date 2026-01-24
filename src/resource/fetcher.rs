@@ -13,11 +13,49 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
+/// Maximum number of instances to track in metrics history
+const MAX_METRICS_HISTORY_ENTRIES: usize = 500;
+
 /// Stores previous metric values for trend calculation
 #[derive(Debug, Clone, Default)]
 pub struct MetricsHistory {
     /// Maps instance_id -> metric_name -> previous_value
     pub values: HashMap<String, HashMap<String, f64>>,
+}
+
+impl MetricsHistory {
+    /// Insert or update metrics for an instance, enforcing size limits
+    pub fn insert(&mut self, instance_id: String, metrics: HashMap<String, f64>) {
+        // If we're at capacity and this is a new key, remove oldest entries
+        // Note: HashMap doesn't track insertion order, so we just remove arbitrary entries
+        // For more precise LRU behavior, consider using `lru` crate in the future
+        if !self.values.contains_key(&instance_id)
+            && self.values.len() >= MAX_METRICS_HISTORY_ENTRIES
+        {
+            // Remove entries until we're under the limit
+            let keys_to_remove: Vec<String> = self
+                .values
+                .keys()
+                .take(self.values.len() - MAX_METRICS_HISTORY_ENTRIES + 1)
+                .cloned()
+                .collect();
+            for key in keys_to_remove {
+                self.values.remove(&key);
+            }
+        }
+        self.values.insert(instance_id, metrics);
+    }
+
+    /// Get metrics for an instance
+    pub fn get(&self, instance_id: &str) -> Option<&HashMap<String, f64>> {
+        self.values.get(instance_id)
+    }
+
+    /// Clear all history (utility method for future use)
+    #[allow(dead_code)]
+    pub fn clear(&mut self) {
+        self.values.clear();
+    }
 }
 
 /// Filter for resources
@@ -82,9 +120,13 @@ pub async fn fetch_multiple_resources(
         let client = client.clone();
 
         futures.push(async move {
-            let _permit = sem.acquire().await.unwrap();
+            // Semaphore can only fail if closed, which won't happen in this context
+            let _permit = sem
+                .acquire()
+                .await
+                .map_err(|e| anyhow::anyhow!("Semaphore closed unexpectedly: {}", e))?;
             let result = fetch_resources(&key, &client, &[]).await;
-            (idx, result)
+            Ok::<_, anyhow::Error>((idx, result))
         });
     }
 
@@ -92,11 +134,25 @@ pub async fn fetch_multiple_resources(
     let mut results: Vec<Option<Result<Vec<Value>>>> =
         (0..resource_keys.len()).map(|_| None).collect();
 
-    while let Some((idx, result)) = futures.next().await {
-        results[idx] = Some(result);
+    while let Some(result) = futures.next().await {
+        match result {
+            Ok((idx, res)) => {
+                results[idx] = Some(res);
+            },
+            Err(e) => {
+                tracing::warn!("Failed to fetch resource: {}", e);
+            },
+        }
     }
 
-    results.into_iter().map(|r| r.unwrap()).collect()
+    // Convert Options to Results, providing error for missing slots
+    results
+        .into_iter()
+        .enumerate()
+        .map(|(idx, r)| {
+            r.unwrap_or_else(|| Err(anyhow::anyhow!("Failed to fetch resource at index {}", idx)))
+        })
+        .collect()
 }
 
 /// Fetch all pages concurrently with speculative fetching
@@ -139,7 +195,17 @@ pub async fn fetch_resources_concurrent(
             let filters = filters.to_vec();
 
             futures.push(async move {
-                let _permit = sem.acquire().await.unwrap();
+                // Semaphore can only fail if closed, which won't happen in this context
+                let permit_result = sem.acquire().await;
+                let _permit = match permit_result {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return (
+                            batch_idx,
+                            Err(anyhow::anyhow!("Semaphore closed unexpectedly: {}", e)),
+                        );
+                    },
+                };
                 let result = fetch_resources_paginated(&key, &client, &filters, Some(&token)).await;
                 (batch_idx, result)
             });
@@ -155,8 +221,8 @@ pub async fn fetch_resources_concurrent(
         }
 
         // Process results in order
-        for result_opt in batch_results {
-            match result_opt.unwrap() {
+        for result_opt in batch_results.into_iter().flatten() {
+            match result_opt {
                 Ok(result) => {
                     page_results.push(result.items);
                     if let Some(next_token) = result.next_token {
@@ -751,7 +817,7 @@ pub async fn enrich_with_metrics(
 
             if let Some(instance_metrics) = metrics_map.get(&instance_id) {
                 // Get previous values for trend calculation
-                let prev_values = history.values.get(&instance_id).cloned();
+                let prev_values = history.get(&instance_id).cloned();
                 let mut new_values: HashMap<String, f64> = HashMap::new();
 
                 // CPU utilization (0-1 -> percentage) with bar and trend
@@ -811,8 +877,8 @@ pub async fn enrich_with_metrics(
                     .unwrap_or_else(|| "-".to_string());
                 map.insert("metrics_disk_write".to_string(), Value::String(disk_write));
 
-                // Store current values for next comparison
-                history.values.insert(instance_id, new_values);
+                // Store current values for next comparison (with size limit)
+                history.insert(instance_id, new_values);
             } else {
                 // No metrics available for this instance
                 map.insert("metrics_cpu".to_string(), Value::String("-".to_string()));

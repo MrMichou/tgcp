@@ -18,6 +18,13 @@ use std::ops::Range;
 use std::time::Duration;
 use uuid::Uuid;
 
+// =========================================================================
+// Configuration Constants
+// =========================================================================
+
+/// Default viewport height (will be updated during render based on terminal size)
+const DEFAULT_VIEWPORT_HEIGHT: usize = 20;
+
 /// Application modes
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
@@ -249,7 +256,7 @@ impl App {
             notification_manager,
             notifications_selected: 0,
             // Virtual scrolling
-            viewport_height: 20, // Will be updated during render
+            viewport_height: DEFAULT_VIEWPORT_HEIGHT,
             scroll_offset: 0,
             // Multi-selection
             selected_indices: HashSet::new(),
@@ -428,6 +435,11 @@ impl App {
     // Filtering
     // =========================================================================
 
+    // TODO: Performance optimization opportunity
+    // Currently clones all items into filtered_items. For large datasets, consider:
+    // 1. Using Vec<usize> indices instead of cloning items
+    // 2. Using Cow<[Value]> for copy-on-write semantics
+    // This would require updating all 40+ usages of filtered_items
     pub fn apply_filter(&mut self) {
         let filter = self.filter_text.to_lowercase();
 
