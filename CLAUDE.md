@@ -198,7 +198,7 @@ cargo run -- --log-level debug
 |-----|--------|
 | `s` | Start instance |
 | `S` | Stop instance |
-| `r` | Reset instance |
+| `Ctrl+r` | Reset instance |
 | `x` | SSH to instance |
 | `X` | SSH via IAP tunnel |
 | `C` | Open in GCP Console |
