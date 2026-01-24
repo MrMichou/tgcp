@@ -716,8 +716,7 @@ impl App {
             },
             _ => {
                 if !self.filtered_items.is_empty() {
-                    self.nav.selected =
-                        (self.nav.selected + 1).min(self.filtered_items.len() - 1);
+                    self.nav.selected = (self.nav.selected + 1).min(self.filtered_items.len() - 1);
                 }
             },
         }
@@ -726,8 +725,7 @@ impl App {
     pub fn previous(&mut self) {
         match self.mode {
             Mode::Projects => {
-                self.projects_selector.selected =
-                    self.projects_selector.selected.saturating_sub(1);
+                self.projects_selector.selected = self.projects_selector.selected.saturating_sub(1);
             },
             Mode::Zones => {
                 self.zones_selector.selected = self.zones_selector.selected.saturating_sub(1);
@@ -750,8 +748,7 @@ impl App {
         match self.mode {
             Mode::Projects => {
                 if !self.projects_selector.filtered.is_empty() {
-                    self.projects_selector.selected =
-                        self.projects_selector.filtered.len() - 1;
+                    self.projects_selector.selected = self.projects_selector.filtered.len() - 1;
                 }
             },
             Mode::Zones => {
@@ -915,7 +912,8 @@ impl App {
     }
 
     pub fn enter_projects_mode(&mut self) {
-        self.projects_selector.init(&self.available_projects, &self.project);
+        self.projects_selector
+            .init(&self.available_projects, &self.project);
         self.mode = Mode::Projects;
     }
 
@@ -1093,7 +1091,8 @@ impl App {
     // =========================================================================
 
     pub fn apply_projects_filter(&mut self) {
-        self.projects_selector.apply_filter(&self.available_projects);
+        self.projects_selector
+            .apply_filter(&self.available_projects);
     }
 
     pub fn apply_zones_filter(&mut self) {
@@ -1447,7 +1446,8 @@ impl App {
             self.nav.scroll_offset = self.nav.selected.saturating_sub(margin);
         }
         // If selected is below visible area, scroll down
-        else if self.nav.selected >= self.nav.scroll_offset + visible_height.saturating_sub(margin)
+        else if self.nav.selected
+            >= self.nav.scroll_offset + visible_height.saturating_sub(margin)
         {
             // Scroll so selected is near bottom with margin
             self.nav.scroll_offset = self

@@ -159,7 +159,11 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             format!(
                 "[sorted:col{}{}]",
                 col + 1,
-                if app.filter_sort.sort_ascending { "↑" } else { "↓" }
+                if app.filter_sort.sort_ascending {
+                    "↑"
+                } else {
+                    "↓"
+                }
             ),
             Style::default().fg(Color::Cyan),
         ));
