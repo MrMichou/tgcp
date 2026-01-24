@@ -1,11 +1,52 @@
 //! HTTP utilities for GCP REST API calls
 
 use anyhow::{Context, Result};
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde_json::Value;
+use std::time::Duration;
 
 /// Maximum length of response body to log (to avoid logging sensitive data)
 const MAX_LOG_BODY_LENGTH: usize = 200;
+
+/// Maximum number of retry attempts for transient errors
+const MAX_RETRIES: u32 = 3;
+
+/// Base delay for exponential backoff (milliseconds)
+const BASE_DELAY_MS: u64 = 500;
+
+/// Maximum delay cap (milliseconds)
+const MAX_DELAY_MS: u64 = 10_000;
+
+/// Check if a status code is retryable (transient error)
+fn is_retryable_status(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::TOO_MANY_REQUESTS       // 429
+        | StatusCode::SERVICE_UNAVAILABLE   // 503
+        | StatusCode::GATEWAY_TIMEOUT       // 504
+        | StatusCode::BAD_GATEWAY // 502
+    )
+}
+
+/// Calculate delay with exponential backoff and jitter
+fn calculate_backoff_delay(attempt: u32) -> Duration {
+    let base_delay = BASE_DELAY_MS * 2u64.pow(attempt);
+    let capped_delay = base_delay.min(MAX_DELAY_MS);
+    // Add jitter: random value between 0 and 50% of the delay
+    let jitter = (capped_delay as f64 * rand_jitter()) as u64;
+    Duration::from_millis(capped_delay + jitter)
+}
+
+/// Simple pseudo-random jitter factor (0.0 to 0.5)
+/// Uses system time for simple randomness without external deps
+fn rand_jitter() -> f64 {
+    use std::time::SystemTime;
+    let nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    (nanos % 500) as f64 / 1000.0
+}
 
 /// Sanitize response body for logging
 /// Truncates long responses and masks potentially sensitive patterns
@@ -43,52 +84,103 @@ impl GcpHttpClient {
         Ok(Self { client })
     }
 
-    /// Make a GET request to a GCP API
+    /// Make a GET request to a GCP API with retry logic for transient errors
     pub async fn get(&self, url: &str, token: &str) -> Result<Value> {
         tracing::debug!("GET {}", url);
 
-        let response = self
-            .client
-            .get(url)
-            .bearer_auth(token)
-            .send()
-            .await
-            .context("Failed to send request")?;
+        let mut last_error = None;
 
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .context("Failed to read response body")?;
+        for attempt in 0..=MAX_RETRIES {
+            let response = self
+                .client
+                .get(url)
+                .bearer_auth(token)
+                .send()
+                .await
+                .context("Failed to send request")?;
 
-        if !status.is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .context("Failed to read response body")?;
+
+            if status.is_success() {
+                return serde_json::from_str(&body).context("Failed to parse response JSON");
+            }
+
+            // Check if error is retryable
+            if is_retryable_status(status) && attempt < MAX_RETRIES {
+                let delay = calculate_backoff_delay(attempt);
+                tracing::warn!(
+                    "Transient error {} on GET {}, retrying in {:?} (attempt {}/{})",
+                    status,
+                    url,
+                    delay,
+                    attempt + 1,
+                    MAX_RETRIES
+                );
+                tokio::time::sleep(delay).await;
+                last_error = Some(anyhow::anyhow!("API request failed: {}", status));
+                continue;
+            }
+
+            // Non-retryable error or max retries exceeded
             // Security: Only log sanitized/truncated error body to avoid leaking sensitive data
             tracing::error!("API error: {} - {}", status, sanitize_for_log(&body));
             return Err(anyhow::anyhow!("API request failed: {}", status));
         }
 
-        serde_json::from_str(&body).context("Failed to parse response JSON")
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Request failed after retries")))
     }
 
-    /// Make a POST request to a GCP API
+    /// Make a POST request to a GCP API with retry logic for transient errors
     pub async fn post(&self, url: &str, token: &str, body: Option<&Value>) -> Result<Value> {
         tracing::debug!("POST {}", url);
 
-        let mut request = self.client.post(url).bearer_auth(token);
+        let mut last_error = None;
 
-        if let Some(body) = body {
-            request = request.json(body);
-        }
+        for attempt in 0..=MAX_RETRIES {
+            let mut request = self.client.post(url).bearer_auth(token);
 
-        let response = request.send().await.context("Failed to send request")?;
+            if let Some(body) = body {
+                request = request.json(body);
+            }
 
-        let status = response.status();
-        let response_body = response
-            .text()
-            .await
-            .context("Failed to read response body")?;
+            let response = request.send().await.context("Failed to send request")?;
 
-        if !status.is_success() {
+            let status = response.status();
+            let response_body = response
+                .text()
+                .await
+                .context("Failed to read response body")?;
+
+            if status.is_success() {
+                // Handle empty response
+                if response_body.is_empty() {
+                    return Ok(Value::Null);
+                }
+                return serde_json::from_str(&response_body)
+                    .context("Failed to parse response JSON");
+            }
+
+            // Check if error is retryable
+            if is_retryable_status(status) && attempt < MAX_RETRIES {
+                let delay = calculate_backoff_delay(attempt);
+                tracing::warn!(
+                    "Transient error {} on POST {}, retrying in {:?} (attempt {}/{})",
+                    status,
+                    url,
+                    delay,
+                    attempt + 1,
+                    MAX_RETRIES
+                );
+                tokio::time::sleep(delay).await;
+                last_error = Some(anyhow::anyhow!("API request failed: {}", status));
+                continue;
+            }
+
+            // Non-retryable error or max retries exceeded
             // Security: Only log sanitized/truncated error body to avoid leaking sensitive data
             tracing::error!(
                 "API error: {} - {}",
@@ -98,52 +190,66 @@ impl GcpHttpClient {
             return Err(anyhow::anyhow!("API request failed: {}", status));
         }
 
-        // Handle empty response
-        if response_body.is_empty() {
-            return Ok(Value::Null);
-        }
-
-        serde_json::from_str(&response_body).context("Failed to parse response JSON")
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Request failed after retries")))
     }
 
-    /// Make a DELETE request to a GCP API
+    /// Make a DELETE request to a GCP API with retry logic for transient errors
     pub async fn delete(&self, url: &str, token: &str) -> Result<Value> {
         tracing::debug!("DELETE {}", url);
 
-        let response = self
-            .client
-            .delete(url)
-            .bearer_auth(token)
-            .send()
-            .await
-            .context("Failed to send request")?;
+        let mut last_error = None;
 
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .context("Failed to read response body")?;
+        for attempt in 0..=MAX_RETRIES {
+            let response = self
+                .client
+                .delete(url)
+                .bearer_auth(token)
+                .send()
+                .await
+                .context("Failed to send request")?;
 
-        if !status.is_success() {
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .context("Failed to read response body")?;
+
+            if status.is_success() {
+                // Handle empty response
+                if body.is_empty() {
+                    return Ok(Value::Null);
+                }
+                return serde_json::from_str(&body).context("Failed to parse response JSON");
+            }
+
+            // Check if error is retryable
+            if is_retryable_status(status) && attempt < MAX_RETRIES {
+                let delay = calculate_backoff_delay(attempt);
+                tracing::warn!(
+                    "Transient error {} on DELETE {}, retrying in {:?} (attempt {}/{})",
+                    status,
+                    url,
+                    delay,
+                    attempt + 1,
+                    MAX_RETRIES
+                );
+                tokio::time::sleep(delay).await;
+                last_error = Some(anyhow::anyhow!("API request failed: {}", status));
+                continue;
+            }
+
+            // Non-retryable error or max retries exceeded
             // Security: Only log sanitized/truncated error body to avoid leaking sensitive data
             tracing::error!("API error: {} - {}", status, sanitize_for_log(&body));
             return Err(anyhow::anyhow!("API request failed: {}", status));
         }
 
-        // Handle empty response
-        if body.is_empty() {
-            return Ok(Value::Null);
-        }
-
-        serde_json::from_str(&body).context("Failed to parse response JSON")
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Request failed after retries")))
     }
 }
 
-impl Default for GcpHttpClient {
-    fn default() -> Self {
-        Self::new().expect("Failed to create default HTTP client")
-    }
-}
+// Note: Default is intentionally not implemented for GcpHttpClient
+// because new() can fail. Use GcpHttpClient::new() explicitly and handle errors.
 
 /// Format a GCP API error for display
 /// Security: Sanitizes error messages to avoid leaking sensitive API details
