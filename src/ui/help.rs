@@ -122,6 +122,10 @@ pub fn render(f: &mut Frame, _app: &App) {
             Span::styled("  :               ", Style::default().fg(Color::Yellow)),
             Span::raw("Command mode (type resource name)"),
         ]),
+        Line::from(vec![
+            Span::styled("  o               ", Style::default().fg(Color::Yellow)),
+            Span::raw("Configure visible columns"),
+        ]),
         Line::from(""),
         // Actions section
         Line::from(vec![Span::styled(

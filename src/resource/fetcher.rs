@@ -9,8 +9,16 @@ use crate::gcp::client::GcpClient;
 use anyhow::Result;
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+
+/// Stores previous metric values for trend calculation
+#[derive(Debug, Clone, Default)]
+pub struct MetricsHistory {
+    /// Maps instance_id -> metric_name -> previous_value
+    pub values: HashMap<String, HashMap<String, f64>>,
+}
 
 /// Filter for resources
 #[derive(Debug, Clone)]
@@ -685,9 +693,11 @@ fn format_bytes(bytes: u64) -> String {
 
 /// Enrich VM instances with monitoring metrics (CPU, Network, Disk IO)
 /// This function fetches metrics from Cloud Monitoring API and merges them into the items
+/// with visual indicators for trends and load levels
 pub async fn enrich_with_metrics(
     items: &mut [Value],
     client: &crate::gcp::client::GcpClient,
+    history: &mut MetricsHistory,
 ) -> Result<()> {
     use super::sdk_dispatch;
 
@@ -732,48 +742,77 @@ pub async fn enrich_with_metrics(
     // Merge metrics into items
     for item in items.iter_mut() {
         if let Value::Object(ref mut map) = item {
-            let instance_id = map.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            // Clone instance_id to avoid borrow conflict with later map mutations
+            let instance_id = map
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
 
-            if let Some(instance_metrics) = metrics_map.get(instance_id) {
-                // CPU utilization (0-1 -> percentage)
-                let cpu = instance_metrics
-                    .get("cpu")
-                    .and_then(|v| v.as_f64())
-                    .map(|v| format!("{:.1}%", v * 100.0))
+            if let Some(instance_metrics) = metrics_map.get(&instance_id) {
+                // Get previous values for trend calculation
+                let prev_values = history.values.get(&instance_id).cloned();
+                let mut new_values: HashMap<String, f64> = HashMap::new();
+
+                // CPU utilization (0-1 -> percentage) with bar and trend
+                let cpu_val = instance_metrics.get("cpu").and_then(|v| v.as_f64());
+                let cpu = cpu_val
+                    .map(|v| {
+                        let pct = v * 100.0;
+                        new_values.insert("cpu".to_string(), pct);
+                        let trend = get_trend(prev_values.as_ref(), "cpu", pct);
+                        let bar = cpu_bar(pct);
+                        format!("{}{:.0}%{}", bar, pct, trend)
+                    })
                     .unwrap_or_else(|| "-".to_string());
                 map.insert("metrics_cpu".to_string(), Value::String(cpu));
 
-                // Network In (bytes/sec -> human readable)
-                let net_in = instance_metrics
-                    .get("network_in")
-                    .and_then(|v| v.as_f64())
-                    .map(format_bytes_per_sec)
+                // Network In with trend
+                let net_in_val = instance_metrics.get("network_in").and_then(|v| v.as_f64());
+                let net_in = net_in_val
+                    .map(|v| {
+                        new_values.insert("network_in".to_string(), v);
+                        let trend = get_trend(prev_values.as_ref(), "network_in", v);
+                        format!("{}{}", format_bytes_per_sec(v), trend)
+                    })
                     .unwrap_or_else(|| "-".to_string());
                 map.insert("metrics_net_in".to_string(), Value::String(net_in));
 
-                // Network Out (bytes/sec -> human readable)
-                let net_out = instance_metrics
-                    .get("network_out")
-                    .and_then(|v| v.as_f64())
-                    .map(format_bytes_per_sec)
+                // Network Out with trend
+                let net_out_val = instance_metrics.get("network_out").and_then(|v| v.as_f64());
+                let net_out = net_out_val
+                    .map(|v| {
+                        new_values.insert("network_out".to_string(), v);
+                        let trend = get_trend(prev_values.as_ref(), "network_out", v);
+                        format!("{}{}", format_bytes_per_sec(v), trend)
+                    })
                     .unwrap_or_else(|| "-".to_string());
                 map.insert("metrics_net_out".to_string(), Value::String(net_out));
 
-                // Disk Read (bytes/sec -> human readable)
-                let disk_read = instance_metrics
-                    .get("disk_read")
-                    .and_then(|v| v.as_f64())
-                    .map(format_bytes_per_sec)
+                // Disk Read with trend
+                let disk_read_val = instance_metrics.get("disk_read").and_then(|v| v.as_f64());
+                let disk_read = disk_read_val
+                    .map(|v| {
+                        new_values.insert("disk_read".to_string(), v);
+                        let trend = get_trend(prev_values.as_ref(), "disk_read", v);
+                        format!("{}{}", format_bytes_per_sec(v), trend)
+                    })
                     .unwrap_or_else(|| "-".to_string());
                 map.insert("metrics_disk_read".to_string(), Value::String(disk_read));
 
-                // Disk Write (bytes/sec -> human readable)
-                let disk_write = instance_metrics
-                    .get("disk_write")
-                    .and_then(|v| v.as_f64())
-                    .map(format_bytes_per_sec)
+                // Disk Write with trend
+                let disk_write_val = instance_metrics.get("disk_write").and_then(|v| v.as_f64());
+                let disk_write = disk_write_val
+                    .map(|v| {
+                        new_values.insert("disk_write".to_string(), v);
+                        let trend = get_trend(prev_values.as_ref(), "disk_write", v);
+                        format!("{}{}", format_bytes_per_sec(v), trend)
+                    })
                     .unwrap_or_else(|| "-".to_string());
                 map.insert("metrics_disk_write".to_string(), Value::String(disk_write));
+
+                // Store current values for next comparison
+                history.values.insert(instance_id, new_values);
             } else {
                 // No metrics available for this instance
                 map.insert("metrics_cpu".to_string(), Value::String("-".to_string()));
@@ -795,6 +834,41 @@ pub async fn enrich_with_metrics(
     }
 
     Ok(())
+}
+
+/// Get trend indicator by comparing current value with previous
+fn get_trend(
+    prev_values: Option<&HashMap<String, f64>>,
+    metric: &str,
+    current: f64,
+) -> &'static str {
+    let Some(prev) = prev_values.and_then(|m| m.get(metric)) else {
+        return ""; // No previous value, no trend
+    };
+
+    let threshold = current.abs().max(prev.abs()) * 0.05; // 5% change threshold
+
+    if current > prev + threshold {
+        "↑"
+    } else if current < prev - threshold {
+        "↓"
+    } else {
+        ""
+    }
+}
+
+/// Generate a mini bar chart for CPU usage
+fn cpu_bar(pct: f64) -> &'static str {
+    match pct as u32 {
+        0..=12 => "▁",
+        13..=25 => "▂",
+        26..=37 => "▃",
+        38..=50 => "▄",
+        51..=62 => "▅",
+        63..=75 => "▆",
+        76..=87 => "▇",
+        _ => "█",
+    }
 }
 
 /// Format bytes per second to human-readable format

@@ -36,6 +36,7 @@ async fn handle_key_event(app: &mut App, code: KeyCode, modifiers: KeyModifiers)
         Mode::Zones => handle_zones_mode(app, code, modifiers).await,
         Mode::Describe => handle_describe_mode(app, code, modifiers),
         Mode::Notifications => handle_notifications_mode(app, code),
+        Mode::ColumnConfig => handle_column_config_mode(app, code),
     }
 }
 
@@ -205,6 +206,11 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         // Notifications
         KeyCode::Char('n') => {
             app.enter_notifications_mode();
+        },
+
+        // Column configuration
+        KeyCode::Char('o') => {
+            app.enter_column_config_mode();
         },
 
         // Delete action with Delete key (resolves Ctrl+D conflict)
@@ -811,6 +817,46 @@ fn handle_notifications_mode(app: &mut App, code: KeyCode) -> Result<bool> {
             // Clear all notifications
             app.clear_notifications();
             app.notifications_selected = 0;
+        },
+        _ => {},
+    }
+    Ok(false)
+}
+
+fn handle_column_config_mode(app: &mut App, code: KeyCode) -> Result<bool> {
+    match code {
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.cancel_column_config();
+        },
+        KeyCode::Enter => {
+            app.apply_column_config();
+        },
+        KeyCode::Char('j') | KeyCode::Down => {
+            if let Some(ref mut state) = app.column_config_state {
+                if state.selected < state.columns.len().saturating_sub(1) {
+                    state.selected += 1;
+                }
+            }
+        },
+        KeyCode::Char('k') | KeyCode::Up => {
+            if let Some(ref mut state) = app.column_config_state {
+                state.selected = state.selected.saturating_sub(1);
+            }
+        },
+        KeyCode::Char(' ') => {
+            app.toggle_column_visibility();
+        },
+        KeyCode::Home | KeyCode::Char('g') => {
+            if let Some(ref mut state) = app.column_config_state {
+                state.selected = 0;
+            }
+        },
+        KeyCode::End | KeyCode::Char('G') => {
+            if let Some(ref mut state) = app.column_config_state {
+                if !state.columns.is_empty() {
+                    state.selected = state.columns.len() - 1;
+                }
+            }
         },
         _ => {},
     }
