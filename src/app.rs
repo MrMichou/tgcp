@@ -30,6 +30,25 @@ pub enum Mode {
     Zones,         // Zone selection
     Describe,      // Viewing JSON details of selected item
     Notifications, // Notifications history panel
+    ColumnConfig,  // Column visibility configuration
+}
+
+/// State for column configuration overlay
+#[derive(Debug, Clone)]
+pub struct ColumnConfigState {
+    /// List of columns with visibility status
+    pub columns: Vec<ColumnConfigItem>,
+    /// Currently selected column index
+    pub selected: usize,
+}
+
+/// Single column configuration item
+#[derive(Debug, Clone)]
+pub struct ColumnConfigItem {
+    /// Column header name
+    pub header: String,
+    /// Whether the column is visible
+    pub visible: bool,
 }
 
 /// Pending action that requires confirmation
@@ -149,6 +168,9 @@ pub struct App {
 
     // Metrics history for trend calculation
     pub metrics_history: MetricsHistory,
+
+    // Column configuration state
+    pub column_config_state: Option<ColumnConfigState>,
 }
 
 impl App {
@@ -234,6 +256,8 @@ impl App {
             visual_mode: false,
             // Metrics history
             metrics_history: MetricsHistory::default(),
+            // Column configuration
+            column_config_state: None,
         }
     }
 
@@ -317,9 +341,12 @@ impl App {
 
                 // Enrich VM instances with monitoring metrics
                 if self.current_resource_key == "compute-instances" {
-                    if let Err(e) =
-                        enrich_with_metrics(&mut self.items, &self.client, &mut self.metrics_history)
-                            .await
+                    if let Err(e) = enrich_with_metrics(
+                        &mut self.items,
+                        &self.client,
+                        &mut self.metrics_history,
+                    )
+                    .await
                     {
                         tracing::debug!("Failed to enrich with metrics: {}", e);
                     }
@@ -730,6 +757,78 @@ impl App {
     pub fn enter_notifications_mode(&mut self) {
         self.notifications_selected = 0;
         self.mode = Mode::Notifications;
+    }
+
+    pub fn enter_column_config_mode(&mut self) {
+        let Some(resource) = self.current_resource() else {
+            return;
+        };
+
+        // Get currently hidden columns for this resource
+        let hidden = self.config.get_hidden_columns(&self.current_resource_key);
+
+        // Build column list with visibility status
+        let columns: Vec<ColumnConfigItem> = resource
+            .columns
+            .iter()
+            .map(|col| ColumnConfigItem {
+                header: col.header.clone(),
+                visible: !hidden.contains(&col.header),
+            })
+            .collect();
+
+        self.column_config_state = Some(ColumnConfigState {
+            columns,
+            selected: 0,
+        });
+        self.mode = Mode::ColumnConfig;
+    }
+
+    /// Toggle visibility of the currently selected column in column config mode
+    pub fn toggle_column_visibility(&mut self) {
+        if let Some(ref mut state) = self.column_config_state {
+            // Count currently visible columns first
+            let visible_count = state.columns.iter().filter(|c| c.visible).count();
+            let selected_idx = state.selected;
+
+            if let Some(col) = state.columns.get_mut(selected_idx) {
+                // Only allow toggling off if more than one column is visible
+                if col.visible && visible_count <= 1 {
+                    // Can't hide the last visible column
+                    return;
+                }
+
+                col.visible = !col.visible;
+            }
+        }
+    }
+
+    /// Apply column configuration and save to config
+    pub fn apply_column_config(&mut self) {
+        if let Some(state) = self.column_config_state.take() {
+            // Collect hidden column headers
+            let hidden: std::collections::HashSet<String> = state
+                .columns
+                .iter()
+                .filter(|col| !col.visible)
+                .map(|col| col.header.clone())
+                .collect();
+
+            // Save to config
+            if let Err(e) = self
+                .config
+                .set_hidden_columns(&self.current_resource_key, hidden)
+            {
+                tracing::warn!("Failed to save column config: {}", e);
+            }
+        }
+        self.mode = Mode::Normal;
+    }
+
+    /// Cancel column config without saving
+    pub fn cancel_column_config(&mut self) {
+        self.column_config_state = None;
+        self.mode = Mode::Normal;
     }
 
     // =========================================================================

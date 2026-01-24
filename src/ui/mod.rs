@@ -29,6 +29,7 @@
 //! - Booleans in magenta
 //! - Null values in dark gray
 
+mod column_config;
 mod command_box;
 mod dialog;
 mod header;
@@ -97,6 +98,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
         },
         Mode::Notifications => {
             notifications::render(f, app);
+        },
+        Mode::ColumnConfig => {
+            column_config::render(f, app, f.area());
         },
         _ => {},
     }
@@ -241,6 +245,17 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
     // Get visible range for virtual scrolling
     let range = app.visible_range();
 
+    // Get hidden columns for this resource
+    let hidden_columns = app.config.get_hidden_columns(&app.current_resource_key);
+
+    // Build list of visible columns with their original indices (for sort tracking)
+    let visible_columns: Vec<(usize, &ColumnDef)> = resource
+        .columns
+        .iter()
+        .enumerate()
+        .filter(|(_, col)| !hidden_columns.contains(&col.header))
+        .collect();
+
     // Build header from column definitions with selection column and sort indicators
     let has_selection = app.selection_count() > 0 || app.visual_mode;
 
@@ -251,8 +266,8 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         )];
-        cells.extend(resource.columns.iter().enumerate().map(|(idx, col)| {
-            let sort_indicator = if app.sort_column == Some(idx) {
+        cells.extend(visible_columns.iter().map(|(orig_idx, col)| {
+            let sort_indicator = if app.sort_column == Some(*orig_idx) {
                 if app.sort_ascending {
                     " ▲"
                 } else {
@@ -262,7 +277,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
                 ""
             };
 
-            let header_text = if app.sort_column == Some(idx) {
+            let header_text = if app.sort_column == Some(*orig_idx) {
                 format!(" {}{}", col.header, sort_indicator)
             } else {
                 format!(" {}", col.header)
@@ -276,12 +291,10 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
         }));
         cells
     } else {
-        resource
-            .columns
+        visible_columns
             .iter()
-            .enumerate()
-            .map(|(idx, col)| {
-                let sort_indicator = if app.sort_column == Some(idx) {
+            .map(|(orig_idx, col)| {
+                let sort_indicator = if app.sort_column == Some(*orig_idx) {
                     if app.sort_ascending {
                         " ▲"
                     } else {
@@ -291,7 +304,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
                     ""
                 };
 
-                let header_text = if app.sort_column == Some(idx) {
+                let header_text = if app.sort_column == Some(*orig_idx) {
                     format!(" {}{}", col.header, sort_indicator)
                 } else {
                     format!(" {}", col.header)
@@ -331,8 +344,8 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
                 cells.push(Cell::from(format!(" {}", indicator)).style(style));
             }
 
-            // Add data cells
-            cells.extend(resource.columns.iter().map(|col| {
+            // Add data cells (only for visible columns)
+            cells.extend(visible_columns.iter().map(|(_, col)| {
                 let value = extract_json_value(item, &col.json_path);
                 let base_style = get_cell_style(&value, col);
                 let display_value = format_cell_value(&value, col);
@@ -355,17 +368,15 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
     let widths: Vec<Constraint> = if has_selection {
         let mut w = vec![Constraint::Length(3)]; // Selection indicator column
         w.extend(
-            resource
-                .columns
+            visible_columns
                 .iter()
-                .map(|col| Constraint::Percentage(col.width)),
+                .map(|(_, col)| Constraint::Percentage(col.width)),
         );
         w
     } else {
-        resource
-            .columns
+        visible_columns
             .iter()
-            .map(|col| Constraint::Percentage(col.width))
+            .map(|(_, col)| Constraint::Percentage(col.width))
             .collect()
     };
 

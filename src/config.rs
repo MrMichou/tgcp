@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 #[cfg(unix)]
@@ -37,6 +37,9 @@ pub struct Config {
     /// Notification options
     #[serde(default)]
     pub notifications: NotificationConfig,
+    /// Hidden columns per resource type (resource_key -> set of column headers)
+    #[serde(default)]
+    pub hidden_columns: HashMap<String, HashSet<String>>,
 }
 
 /// SSH configuration options
@@ -222,5 +225,27 @@ impl Config {
     /// Resolve alias to resource key
     pub fn resolve_alias(&self, alias: &str) -> Option<&String> {
         self.aliases.get(alias)
+    }
+
+    /// Get hidden columns for a resource type
+    pub fn get_hidden_columns(&self, resource_key: &str) -> HashSet<String> {
+        self.hidden_columns
+            .get(resource_key)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Set hidden columns for a resource type and save
+    pub fn set_hidden_columns(
+        &mut self,
+        resource_key: &str,
+        hidden: HashSet<String>,
+    ) -> Result<()> {
+        if hidden.is_empty() {
+            self.hidden_columns.remove(resource_key);
+        } else {
+            self.hidden_columns.insert(resource_key.to_string(), hidden);
+        }
+        self.save()
     }
 }

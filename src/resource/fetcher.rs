@@ -837,7 +837,11 @@ pub async fn enrich_with_metrics(
 }
 
 /// Get trend indicator by comparing current value with previous
-fn get_trend(prev_values: Option<&HashMap<String, f64>>, metric: &str, current: f64) -> &'static str {
+fn get_trend(
+    prev_values: Option<&HashMap<String, f64>>,
+    metric: &str,
+    current: f64,
+) -> &'static str {
     let Some(prev) = prev_values.and_then(|m| m.get(metric)) else {
         return ""; // No previous value, no trend
     };
