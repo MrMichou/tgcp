@@ -18,7 +18,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     // Title with count
     let title = format!(
         " Select Zone [{}/{}] ",
-        app.zones_filtered.len(),
+        app.zones_selector.filtered.len(),
         app.available_zones.len()
     );
 
@@ -50,7 +50,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     // Search input with cursor
     let search_line = Line::from(vec![
         Span::styled(" / ", Style::default().fg(Color::Yellow)),
-        Span::styled(&app.zones_search_text, Style::default().fg(Color::White)),
+        Span::styled(&app.zones_selector.search_text, Style::default().fg(Color::White)),
         Span::styled("_", Style::default().fg(Color::Yellow)),
     ]);
     f.render_widget(
@@ -81,7 +81,8 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
     // Filtered zone list
     let items: Vec<ListItem> = app
-        .zones_filtered
+        .zones_selector
+        .filtered
         .iter()
         .map(|zone| {
             let style = if zone == &app.zone {
@@ -114,7 +115,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.zones_selected));
+    state.select(Some(app.zones_selector.selected));
 
     f.render_stateful_widget(list, chunks[3], &mut state);
 }

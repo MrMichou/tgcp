@@ -71,20 +71,20 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
     app.last_key_press = None;
 
     // Handle filter input first
-    if app.filter_active {
+    if app.filter_sort.filter_active {
         match code {
             KeyCode::Esc => {
                 app.clear_filter();
             },
             KeyCode::Enter => {
-                app.filter_active = false;
+                app.filter_sort.filter_active = false;
             },
             KeyCode::Backspace => {
-                app.filter_text.pop();
+                app.filter_sort.filter_text.pop();
                 app.apply_filter();
             },
             KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => {
-                app.filter_text.push(c);
+                app.filter_sort.filter_text.push(c);
                 app.apply_filter();
             },
             _ => {},
@@ -110,7 +110,7 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
             // Select all visible items
             app.select_all();
         },
-        KeyCode::Esc if app.selection_count() > 0 || app.visual_mode => {
+        KeyCode::Esc if app.selection.count() > 0 || app.selection.visual_mode => {
             // Clear selection with Escape (only when there's selection or visual mode)
             app.clear_selection();
         },
@@ -140,10 +140,10 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         },
 
         // Quick jump to position 1-9
-        KeyCode::Char(c @ '1'..='9') if !app.filter_active => {
+        KeyCode::Char(c @ '1'..='9') if !app.filter_sort.filter_active => {
             let idx = c.to_digit(10).unwrap() as usize - 1;
             if idx < app.filtered_items.len() {
-                app.selected = idx;
+                app.nav.selected = idx;
             }
         },
 
@@ -167,7 +167,7 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         // Refresh
         KeyCode::Char('R') => {
             app.reset_pagination();
-            app.sort_column = None; // Reset sort on refresh
+            app.filter_sort.sort_column = None; // Reset sort on refresh
             app.refresh_current().await?;
         },
 
@@ -181,7 +181,7 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
 
         // Filter
         KeyCode::Char('/') => {
-            app.filter_active = true;
+            app.filter_sort.filter_active = true;
         },
 
         // Command mode
@@ -196,12 +196,12 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
 
         // Back navigation
         KeyCode::Backspace | KeyCode::Left => {
-            if app.parent_context.is_some() {
+            if app.nav.parent_context.is_some() {
                 app.navigate_back().await?;
             }
         },
         KeyCode::Char('b') => {
-            if app.parent_context.is_some() {
+            if app.nav.parent_context.is_some() {
                 app.navigate_back().await?;
             }
         },
@@ -502,7 +502,7 @@ async fn handle_command_mode(
             return Ok(should_quit);
         },
         KeyCode::Backspace => {
-            app.command_text.pop();
+            app.command.text.pop();
             app.update_command_suggestions();
         },
         KeyCode::Tab | KeyCode::Right => {
@@ -515,7 +515,7 @@ async fn handle_command_mode(
             app.prev_suggestion();
         },
         KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => {
-            app.command_text.push(c);
+            app.command.text.push(c);
             app.update_command_suggestions();
         },
         _ => {},
@@ -716,21 +716,21 @@ async fn handle_selector_mode(
         },
         KeyCode::Backspace => match selector_type {
             SelectorType::Projects => {
-                app.projects_search_text.pop();
+                app.projects_selector.search_text.pop();
                 app.apply_projects_filter();
             },
             SelectorType::Zones => {
-                app.zones_search_text.pop();
+                app.zones_selector.search_text.pop();
                 app.apply_zones_filter();
             },
         },
         KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => match selector_type {
             SelectorType::Projects => {
-                app.projects_search_text.push(c);
+                app.projects_selector.search_text.push(c);
                 app.apply_projects_filter();
             },
             SelectorType::Zones => {
-                app.zones_search_text.push(c);
+                app.zones_selector.search_text.push(c);
                 app.apply_zones_filter();
             },
         },
@@ -757,29 +757,29 @@ fn handle_describe_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -
             app.exit_mode();
         },
         KeyCode::Char('j') | KeyCode::Down => {
-            app.describe_scroll = app.describe_scroll.saturating_add(1);
+            app.describe.scroll = app.describe.scroll.saturating_add(1);
         },
         KeyCode::Char('k') | KeyCode::Up => {
-            app.describe_scroll = app.describe_scroll.saturating_sub(1);
+            app.describe.scroll = app.describe.scroll.saturating_sub(1);
         },
         KeyCode::PageDown => {
-            app.describe_scroll = app.describe_scroll.saturating_add(10);
+            app.describe.scroll = app.describe.scroll.saturating_add(10);
         },
         KeyCode::PageUp => {
-            app.describe_scroll = app.describe_scroll.saturating_sub(10);
+            app.describe.scroll = app.describe.scroll.saturating_sub(10);
         },
         KeyCode::Char('d') => {
             if modifiers.contains(KeyModifiers::CONTROL) {
-                app.describe_scroll = app.describe_scroll.saturating_add(10);
+                app.describe.scroll = app.describe.scroll.saturating_add(10);
             } else {
                 app.exit_mode();
             }
         },
         KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-            app.describe_scroll = app.describe_scroll.saturating_sub(10);
+            app.describe.scroll = app.describe.scroll.saturating_sub(10);
         },
         KeyCode::Char('g') | KeyCode::Home => {
-            app.describe_scroll = 0;
+            app.describe.scroll = 0;
         },
         KeyCode::Char('G') | KeyCode::End => {
             app.describe_scroll_to_bottom(30); // Approximate visible lines

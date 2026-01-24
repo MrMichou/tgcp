@@ -154,12 +154,12 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     ];
 
     // Add sort indicator if active
-    if let Some(col) = app.sort_column {
+    if let Some(col) = app.filter_sort.sort_column {
         help_spans.push(Span::styled(
             format!(
                 "[sorted:col{}{}]",
                 col + 1,
-                if app.sort_ascending { "↑" } else { "↓" }
+                if app.filter_sort.sort_ascending { "↑" } else { "↓" }
             ),
             Style::default().fg(Color::Cyan),
         ));

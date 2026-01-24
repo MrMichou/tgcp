@@ -18,7 +18,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     // Title with count
     let title = format!(
         " Select Project [{}/{}] ",
-        app.projects_filtered.len(),
+        app.projects_selector.filtered.len(),
         app.available_projects.len()
     );
 
@@ -50,7 +50,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     // Search input with cursor
     let search_line = Line::from(vec![
         Span::styled(" / ", Style::default().fg(Color::Yellow)),
-        Span::styled(&app.projects_search_text, Style::default().fg(Color::White)),
+        Span::styled(&app.projects_selector.search_text, Style::default().fg(Color::White)),
         Span::styled("_", Style::default().fg(Color::Yellow)),
     ]);
     f.render_widget(
@@ -81,7 +81,8 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
     // Filtered project list
     let items: Vec<ListItem> = app
-        .projects_filtered
+        .projects_selector
+        .filtered
         .iter()
         .map(|project| {
             let style = if project == &app.project {
@@ -108,7 +109,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    state.select(Some(app.projects_selected));
+    state.select(Some(app.projects_selector.selected));
 
     f.render_stateful_widget(list, chunks[3], &mut state);
 }
