@@ -42,29 +42,29 @@ pub fn render(f: &mut Frame, app: &App) {
         ));
 
     // Show input with ghost text preview
-    let input_content = if let Some(preview) = &app.command_preview {
-        if app.command_text.is_empty() {
+    let input_content = if let Some(preview) = &app.command.preview {
+        if app.command.text.is_empty() {
             Line::from(vec![
                 Span::styled(":", Style::default().fg(Color::Cyan)),
                 Span::styled(preview, Style::default().fg(Color::DarkGray)),
             ])
-        } else if preview.starts_with(&app.command_text) {
-            let remaining = &preview[app.command_text.len()..];
+        } else if preview.starts_with(&app.command.text) {
+            let remaining = &preview[app.command.text.len()..];
             Line::from(vec![
                 Span::styled(":", Style::default().fg(Color::Cyan)),
-                Span::styled(&app.command_text, Style::default().fg(Color::White)),
+                Span::styled(&app.command.text, Style::default().fg(Color::White)),
                 Span::styled(remaining, Style::default().fg(Color::DarkGray)),
             ])
         } else {
             Line::from(vec![
                 Span::styled(":", Style::default().fg(Color::Cyan)),
-                Span::styled(&app.command_text, Style::default().fg(Color::White)),
+                Span::styled(&app.command.text, Style::default().fg(Color::White)),
             ])
         }
     } else {
         Line::from(vec![
             Span::styled(":", Style::default().fg(Color::Cyan)),
-            Span::styled(&app.command_text, Style::default().fg(Color::White)),
+            Span::styled(&app.command.text, Style::default().fg(Color::White)),
         ])
     };
 
@@ -81,12 +81,13 @@ pub fn render(f: &mut Frame, app: &App) {
         ));
 
     let suggestions: Vec<ListItem> = app
-        .command_suggestions
+        .command
+        .suggestions
         .iter()
         .enumerate()
         .take(8)
         .map(|(i, cmd)| {
-            let style = if i == app.command_suggestion_selected {
+            let style = if i == app.command.suggestion_selected {
                 Style::default()
                     .fg(Color::Black)
                     .bg(Color::Cyan)

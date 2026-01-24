@@ -108,7 +108,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
 fn render_main_content(f: &mut Frame, app: &mut App, area: Rect) {
     // If filter is active or has text, show filter input above table
-    let show_filter = app.filter_active || !app.filter_text.is_empty();
+    let show_filter = app.filter_sort.filter_active || !app.filter_sort.filter_text.is_empty();
 
     if show_filter {
         let chunks = Layout::default()
@@ -124,7 +124,7 @@ fn render_main_content(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn render_filter_bar(f: &mut Frame, app: &App, area: Rect) {
-    let cursor_style = if app.filter_active {
+    let cursor_style = if app.filter_sort.filter_active {
         Style::default()
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
@@ -132,10 +132,10 @@ fn render_filter_bar(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(Color::DarkGray)
     };
 
-    let filter_display = if app.filter_active {
-        format!("/{}_", app.filter_text)
+    let filter_display = if app.filter_sort.filter_active {
+        format!("/{}_", app.filter_sort.filter_text)
     } else {
-        format!("/{}", app.filter_text)
+        format!("/{}", app.filter_sort.filter_text)
     };
 
     let paragraph = Paragraph::new(Line::from(vec![Span::styled(filter_display, cursor_style)]));
@@ -161,7 +161,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
         // Build selection indicator
         let selection_info = if selection_count > 0 {
             format!(" [{}✓]", selection_count)
-        } else if app.visual_mode {
+        } else if app.selection.visual_mode {
             " [V]".to_string()
         } else {
             String::new()
@@ -179,7 +179,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
         };
 
         if is_global {
-            if app.filter_text.is_empty() {
+            if app.filter_sort.filter_text.is_empty() {
                 format!(
                     " {}[{}]{}{} ",
                     resource.display_name, count, selection_info, page_info
@@ -190,7 +190,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
                     resource.display_name, count, total, selection_info, page_info
                 )
             }
-        } else if app.filter_text.is_empty() {
+        } else if app.filter_sort.filter_text.is_empty() {
             format!(
                 " {}({})[{}]{}{} ",
                 resource.display_name, app.zone, count, selection_info, page_info
@@ -204,7 +204,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     // Create the bordered box with centered title
-    let border_color = if app.visual_mode {
+    let border_color = if app.selection.visual_mode {
         Color::Magenta
     } else {
         Color::DarkGray
@@ -257,7 +257,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     // Build header from column definitions with selection column and sort indicators
-    let has_selection = app.selection_count() > 0 || app.visual_mode;
+    let has_selection = app.selection_count() > 0 || app.selection.visual_mode;
 
     let header_cells: Vec<Cell> = if has_selection {
         // Add selection column header
@@ -267,8 +267,8 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )];
         cells.extend(visible_columns.iter().map(|(orig_idx, col)| {
-            let sort_indicator = if app.sort_column == Some(*orig_idx) {
-                if app.sort_ascending {
+            let sort_indicator = if app.filter_sort.sort_column == Some(*orig_idx) {
+                if app.filter_sort.sort_ascending {
                     " ▲"
                 } else {
                     " ▼"
@@ -277,7 +277,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
                 ""
             };
 
-            let header_text = if app.sort_column == Some(*orig_idx) {
+            let header_text = if app.filter_sort.sort_column == Some(*orig_idx) {
                 format!(" {}{}", col.header, sort_indicator)
             } else {
                 format!(" {}", col.header)
@@ -294,8 +294,8 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
         visible_columns
             .iter()
             .map(|(orig_idx, col)| {
-                let sort_indicator = if app.sort_column == Some(*orig_idx) {
-                    if app.sort_ascending {
+                let sort_indicator = if app.filter_sort.sort_column == Some(*orig_idx) {
+                    if app.filter_sort.sort_ascending {
                         " ▲"
                     } else {
                         " ▼"
@@ -304,7 +304,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
                     ""
                 };
 
-                let header_text = if app.sort_column == Some(*orig_idx) {
+                let header_text = if app.filter_sort.sort_column == Some(*orig_idx) {
                     format!(" {}{}", col.header, sort_indicator)
                 } else {
                     format!(" {}", col.header)
@@ -389,8 +389,8 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Adjust selected index for virtual scrolling
     let mut state = TableState::default();
-    if app.selected >= range.start && app.selected < range.end {
-        state.select(Some(app.selected - range.start));
+    if app.nav.selected >= range.start && app.nav.selected < range.end {
+        state.select(Some(app.nav.selected - range.start));
     }
 
     f.render_stateful_widget(table, table_area, &mut state);
@@ -403,7 +403,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
             .end_symbol(Some("↓"));
 
         let mut scrollbar_state = ScrollbarState::new(total_items.saturating_sub(visible_height))
-            .position(app.scroll_offset);
+            .position(app.nav.scroll_offset);
 
         f.render_stateful_widget(scrollbar, inner_area, &mut scrollbar_state);
     }
@@ -481,7 +481,7 @@ fn render_describe_view(f: &mut Frame, app: &App, area: Rect) {
     // Calculate max scroll based on inner area (content area without borders)
     let visible_lines = inner_area.height as usize;
     let max_scroll = total_lines.saturating_sub(visible_lines);
-    let scroll = app.describe_scroll.min(max_scroll);
+    let scroll = app.describe.scroll.min(max_scroll);
 
     let paragraph = Paragraph::new(lines.clone()).scroll((scroll as u16, 0));
 
@@ -666,7 +666,7 @@ fn render_crumb(f: &mut Frame, app: &App, area: Rect) {
         "Loading...".to_string()
     } else if app.mode == Mode::Describe {
         "j/k: scroll | q/d/Esc: back".to_string()
-    } else if app.filter_active {
+    } else if app.filter_sort.filter_active {
         "Type to filter | Enter: apply | Esc: clear".to_string()
     } else {
         format!("{}{}", shortcuts_hint, pagination_hint)

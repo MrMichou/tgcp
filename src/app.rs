@@ -86,6 +86,219 @@ pub struct PaginationState {
     pub has_more: bool,
 }
 
+// =========================================================================
+// Decomposed State Sub-Structs
+// =========================================================================
+
+/// Navigation state for list scrolling and hierarchical navigation
+#[derive(Debug, Clone, Default)]
+pub struct NavigationState {
+    /// Currently selected item index in the list
+    pub selected: usize,
+    /// Scroll offset for virtual scrolling
+    pub scroll_offset: usize,
+    /// Visible viewport height in rows
+    pub viewport_height: usize,
+    /// Parent context for sub-resource navigation
+    pub parent_context: Option<ParentContext>,
+    /// Stack of parent contexts for deep navigation
+    pub navigation_stack: Vec<ParentContext>,
+}
+
+impl NavigationState {
+    pub fn new() -> Self {
+        Self {
+            viewport_height: DEFAULT_VIEWPORT_HEIGHT,
+            ..Default::default()
+        }
+    }
+
+    /// Reset navigation state when switching resources
+    pub fn reset(&mut self) {
+        self.selected = 0;
+        self.scroll_offset = 0;
+    }
+
+    /// Clear hierarchical navigation context
+    pub fn clear_hierarchy(&mut self) {
+        self.parent_context = None;
+        self.navigation_stack.clear();
+    }
+}
+
+/// Multi-selection state for bulk operations
+#[derive(Debug, Clone, Default)]
+pub struct SelectionState {
+    /// Set of selected item indices
+    pub indices: HashSet<usize>,
+    /// Whether visual/multi-select mode is active
+    pub visual_mode: bool,
+}
+
+impl SelectionState {
+    /// Toggle selection of an item at the given index
+    pub fn toggle(&mut self, index: usize) {
+        if self.indices.contains(&index) {
+            self.indices.remove(&index);
+        } else {
+            self.indices.insert(index);
+        }
+    }
+
+    /// Select all items up to the given count
+    pub fn select_all(&mut self, count: usize) {
+        self.indices = (0..count).collect();
+    }
+
+    /// Clear all selections
+    pub fn clear(&mut self) {
+        self.indices.clear();
+        self.visual_mode = false;
+    }
+
+    /// Check if an index is selected
+    pub fn is_selected(&self, index: usize) -> bool {
+        self.indices.contains(&index)
+    }
+
+    /// Get count of selected items
+    pub fn count(&self) -> usize {
+        self.indices.len()
+    }
+}
+
+/// Filter and sort state for the item list
+#[derive(Debug, Clone, Default)]
+pub struct FilterSortState {
+    /// Current filter text
+    pub filter_text: String,
+    /// Whether filtering is active (user is typing)
+    pub filter_active: bool,
+    /// Currently sorted column index (if any)
+    pub sort_column: Option<usize>,
+    /// Sort direction
+    pub sort_ascending: bool,
+}
+
+impl FilterSortState {
+    /// Clear filter state
+    pub fn clear_filter(&mut self) {
+        self.filter_text.clear();
+        self.filter_active = false;
+    }
+
+    /// Clear sort state
+    pub fn clear_sort(&mut self) {
+        self.sort_column = None;
+    }
+
+    /// Reset all filter and sort state
+    pub fn reset(&mut self) {
+        self.clear_filter();
+        self.clear_sort();
+        self.sort_ascending = true;
+    }
+}
+
+/// Command mode state
+#[derive(Debug, Clone, Default)]
+pub struct CommandState {
+    /// Current command input text
+    pub text: String,
+    /// Available command suggestions
+    pub suggestions: Vec<String>,
+    /// Currently selected suggestion index
+    pub suggestion_selected: usize,
+    /// Preview of selected suggestion
+    pub preview: Option<String>,
+}
+
+impl CommandState {
+    /// Select next suggestion (wrapping)
+    pub fn next_suggestion(&mut self) {
+        if !self.suggestions.is_empty() {
+            self.suggestion_selected = (self.suggestion_selected + 1) % self.suggestions.len();
+            self.update_preview();
+        }
+    }
+
+    /// Select previous suggestion (wrapping)
+    pub fn prev_suggestion(&mut self) {
+        if !self.suggestions.is_empty() {
+            if self.suggestion_selected == 0 {
+                self.suggestion_selected = self.suggestions.len() - 1;
+            } else {
+                self.suggestion_selected -= 1;
+            }
+            self.update_preview();
+        }
+    }
+
+    /// Update preview from current selection
+    pub fn update_preview(&mut self) {
+        self.preview = self.suggestions.get(self.suggestion_selected).cloned();
+    }
+
+    /// Apply the current preview to the command text
+    pub fn apply_suggestion(&mut self) {
+        if let Some(preview) = &self.preview {
+            self.text = preview.clone();
+        }
+    }
+}
+
+/// State for project/zone selector dialogs
+#[derive(Debug, Clone, Default)]
+pub struct SelectorState {
+    /// Currently selected index in the filtered list
+    pub selected: usize,
+    /// Search/filter text
+    pub search_text: String,
+    /// Filtered items matching search
+    pub filtered: Vec<String>,
+}
+
+impl SelectorState {
+    /// Initialize selector with available items, highlighting current selection
+    pub fn init(&mut self, items: &[String], current: &str) {
+        self.search_text.clear();
+        self.filtered = items.to_vec();
+        self.selected = self.filtered.iter().position(|p| p == current).unwrap_or(0);
+    }
+
+    /// Apply filter to the available items
+    pub fn apply_filter(&mut self, available: &[String]) {
+        let filter = self.search_text.to_lowercase();
+        if filter.is_empty() {
+            self.filtered = available.to_vec();
+        } else {
+            self.filtered = available
+                .iter()
+                .filter(|item| item.to_lowercase().contains(&filter))
+                .cloned()
+                .collect();
+        }
+        // Reset selection if out of bounds
+        if self.selected >= self.filtered.len() {
+            self.selected = 0;
+        }
+    }
+
+    /// Get currently selected item
+    pub fn current(&self) -> Option<&String> {
+        self.filtered.get(self.selected)
+    }
+}
+
+/// Describe/detail view state
+#[derive(Debug, Clone, Default)]
+pub struct DescribeState {
+    /// Scroll position in the describe view
+    pub scroll: usize,
+    /// Cached data for describe view
+    pub data: Option<Value>,
+}
+
 /// Main application state
 pub struct App {
     // GCP Client
@@ -98,38 +311,23 @@ pub struct App {
     pub items: Vec<Value>,
     pub filtered_items: Vec<Value>,
 
-    // Navigation state
-    pub selected: usize,
+    // Application mode
     pub mode: Mode,
-    pub filter_text: String,
-    pub filter_active: bool,
 
-    // Hierarchical navigation
-    pub parent_context: Option<ParentContext>,
-    pub navigation_stack: Vec<ParentContext>,
+    // Decomposed state sub-structs
+    pub nav: NavigationState,
+    pub selection: SelectionState,
+    pub filter_sort: FilterSortState,
+    pub command: CommandState,
+    pub projects_selector: SelectorState,
+    pub zones_selector: SelectorState,
+    pub describe: DescribeState,
 
-    // Command input
-    pub command_text: String,
-    pub command_suggestions: Vec<String>,
-    pub command_suggestion_selected: usize,
-    pub command_preview: Option<String>,
-
-    // Project/Zone
+    // Project/Zone (current values and available options)
     pub project: String,
     pub zone: String,
     pub available_projects: Vec<String>,
     pub available_zones: Vec<String>,
-    pub projects_selected: usize,
-    pub zones_selected: usize,
-    // Search in selectors
-    pub projects_search_text: String,
-    pub projects_filtered: Vec<String>,
-    pub zones_search_text: String,
-    pub zones_filtered: Vec<String>,
-
-    // Sorting
-    pub sort_column: Option<usize>,
-    pub sort_ascending: bool,
 
     // Confirmation
     pub pending_action: Option<PendingAction>,
@@ -137,8 +335,6 @@ pub struct App {
     // UI state
     pub loading: bool,
     pub error_message: Option<String>,
-    pub describe_scroll: usize,
-    pub describe_data: Option<Value>,
 
     // Auto-refresh
     pub last_refresh: std::time::Instant,
@@ -164,14 +360,6 @@ pub struct App {
     // Notifications
     pub notification_manager: NotificationManager,
     pub notifications_selected: usize,
-
-    // Virtual scrolling
-    pub viewport_height: usize,
-    pub scroll_offset: usize,
-
-    // Multi-selection (bulk operations)
-    pub selected_indices: HashSet<usize>,
-    pub visual_mode: bool,
 
     // Metrics history for trend calculation
     pub metrics_history: MetricsHistory,
@@ -214,38 +402,40 @@ impl App {
         notification_manager.auto_poll = config.notifications.auto_poll;
         notification_manager.sound_config = SoundConfig::from_str(&config.notifications.sound);
 
+        // Initialize selector states
+        let projects_selector = SelectorState {
+            filtered: available_projects.clone(),
+            ..Default::default()
+        };
+
+        let zones_selector = SelectorState {
+            filtered: available_zones.clone(),
+            ..Default::default()
+        };
+
         Self {
             client,
             current_resource_key: "compute-instances".to_string(),
             items: initial_items,
             filtered_items,
-            selected: 0,
             mode: Mode::Normal,
-            filter_text: String::new(),
-            filter_active: false,
-            parent_context: None,
-            navigation_stack: Vec::new(),
-            command_text: String::new(),
-            command_suggestions: Vec::new(),
-            command_suggestion_selected: 0,
-            command_preview: None,
+            nav: NavigationState::new(),
+            selection: SelectionState::default(),
+            filter_sort: FilterSortState {
+                sort_ascending: true,
+                ..Default::default()
+            },
+            command: CommandState::default(),
+            projects_selector,
+            zones_selector,
+            describe: DescribeState::default(),
             project,
             zone,
-            available_projects: available_projects.clone(),
-            available_zones: available_zones.clone(),
-            projects_selected: 0,
-            zones_selected: 0,
-            projects_search_text: String::new(),
-            projects_filtered: available_projects,
-            zones_search_text: String::new(),
-            zones_filtered: available_zones,
-            sort_column: None,
-            sort_ascending: true,
+            available_projects,
+            available_zones,
             pending_action: None,
             loading: false,
             error_message: None,
-            describe_scroll: 0,
-            describe_data: None,
             last_refresh: std::time::Instant::now(),
             config,
             last_key_press: None,
@@ -255,17 +445,16 @@ impl App {
             theme_manager,
             notification_manager,
             notifications_selected: 0,
-            // Virtual scrolling
-            viewport_height: DEFAULT_VIEWPORT_HEIGHT,
-            scroll_offset: 0,
-            // Multi-selection
-            selected_indices: HashSet::new(),
-            visual_mode: false,
-            // Metrics history
             metrics_history: MetricsHistory::default(),
-            // Column configuration
             column_config_state: None,
         }
+    }
+
+    // =========================================================================
+    /// Get selection count
+    #[inline]
+    pub fn selection_count(&self) -> usize {
+        self.selection.count()
     }
 
     /// Check if auto-refresh is needed (disabled)
@@ -343,7 +532,7 @@ impl App {
         .await
         {
             Ok(result) => {
-                let prev_selected = self.selected;
+                let prev_selected = self.nav.selected;
                 self.items = result.items;
 
                 // Enrich VM instances with monitoring metrics
@@ -365,16 +554,16 @@ impl App {
                 self.pagination.next_token = result.next_token;
 
                 if prev_selected < self.filtered_items.len() {
-                    self.selected = prev_selected;
+                    self.nav.selected = prev_selected;
                 } else {
-                    self.selected = 0;
+                    self.nav.selected = 0;
                 }
             },
             Err(e) => {
                 self.error_message = Some(crate::gcp::client::format_gcp_error(&e));
                 self.items.clear();
                 self.filtered_items.clear();
-                self.selected = 0;
+                self.nav.selected = 0;
                 self.pagination = PaginationState::default();
             },
         }
@@ -413,7 +602,7 @@ impl App {
     }
 
     fn build_filters_from_context(&self) -> Vec<ResourceFilter> {
-        let Some(parent) = &self.parent_context else {
+        let Some(parent) = &self.nav.parent_context else {
             return Vec::new();
         };
 
@@ -441,7 +630,7 @@ impl App {
     // 2. Using Cow<[Value]> for copy-on-write semantics
     // This would require updating all 40+ usages of filtered_items
     pub fn apply_filter(&mut self) {
-        let filter = self.filter_text.to_lowercase();
+        let filter = self.filter_sort.filter_text.to_lowercase();
 
         if filter.is_empty() {
             self.filtered_items = self.items.clone();
@@ -465,23 +654,22 @@ impl App {
                 .collect();
         }
 
-        if self.selected >= self.filtered_items.len() && !self.filtered_items.is_empty() {
-            self.selected = self.filtered_items.len() - 1;
+        if self.nav.selected >= self.filtered_items.len() && !self.filtered_items.is_empty() {
+            self.nav.selected = self.filtered_items.len() - 1;
         }
 
         // Clear selection when filter changes (indices become invalid)
-        self.selected_indices.clear();
-        self.scroll_offset = 0;
+        self.selection.clear();
+        self.nav.scroll_offset = 0;
 
         // Re-apply sort if active
-        if self.sort_column.is_some() {
+        if self.filter_sort.sort_column.is_some() {
             self.apply_sort();
         }
     }
 
     pub fn clear_filter(&mut self) {
-        self.filter_text.clear();
-        self.filter_active = false;
+        self.filter_sort.clear_filter();
         self.apply_filter();
     }
 
@@ -490,11 +678,11 @@ impl App {
     // =========================================================================
 
     pub fn selected_item(&self) -> Option<&Value> {
-        self.filtered_items.get(self.selected)
+        self.filtered_items.get(self.nav.selected)
     }
 
     pub fn selected_item_json(&self) -> Option<String> {
-        if let Some(ref data) = self.describe_data {
+        if let Some(ref data) = self.describe.data {
             return Some(serde_json::to_string_pretty(data).unwrap_or_default());
         }
         self.selected_item()
@@ -509,26 +697,27 @@ impl App {
 
     pub fn describe_scroll_to_bottom(&mut self, visible_lines: usize) {
         let total = self.describe_line_count();
-        self.describe_scroll = total.saturating_sub(visible_lines);
+        self.describe.scroll = total.saturating_sub(visible_lines);
     }
 
     pub fn next(&mut self) {
         match self.mode {
             Mode::Projects => {
-                if !self.projects_filtered.is_empty() {
-                    self.projects_selected =
-                        (self.projects_selected + 1).min(self.projects_filtered.len() - 1);
+                if !self.projects_selector.filtered.is_empty() {
+                    self.projects_selector.selected = (self.projects_selector.selected + 1)
+                        .min(self.projects_selector.filtered.len() - 1);
                 }
             },
             Mode::Zones => {
-                if !self.zones_filtered.is_empty() {
-                    self.zones_selected =
-                        (self.zones_selected + 1).min(self.zones_filtered.len() - 1);
+                if !self.zones_selector.filtered.is_empty() {
+                    self.zones_selector.selected = (self.zones_selector.selected + 1)
+                        .min(self.zones_selector.filtered.len() - 1);
                 }
             },
             _ => {
                 if !self.filtered_items.is_empty() {
-                    self.selected = (self.selected + 1).min(self.filtered_items.len() - 1);
+                    self.nav.selected =
+                        (self.nav.selected + 1).min(self.filtered_items.len() - 1);
                 }
             },
         }
@@ -537,40 +726,42 @@ impl App {
     pub fn previous(&mut self) {
         match self.mode {
             Mode::Projects => {
-                self.projects_selected = self.projects_selected.saturating_sub(1);
+                self.projects_selector.selected =
+                    self.projects_selector.selected.saturating_sub(1);
             },
             Mode::Zones => {
-                self.zones_selected = self.zones_selected.saturating_sub(1);
+                self.zones_selector.selected = self.zones_selector.selected.saturating_sub(1);
             },
             _ => {
-                self.selected = self.selected.saturating_sub(1);
+                self.nav.selected = self.nav.selected.saturating_sub(1);
             },
         }
     }
 
     pub fn go_to_top(&mut self) {
         match self.mode {
-            Mode::Projects => self.projects_selected = 0,
-            Mode::Zones => self.zones_selected = 0,
-            _ => self.selected = 0,
+            Mode::Projects => self.projects_selector.selected = 0,
+            Mode::Zones => self.zones_selector.selected = 0,
+            _ => self.nav.selected = 0,
         }
     }
 
     pub fn go_to_bottom(&mut self) {
         match self.mode {
             Mode::Projects => {
-                if !self.projects_filtered.is_empty() {
-                    self.projects_selected = self.projects_filtered.len() - 1;
+                if !self.projects_selector.filtered.is_empty() {
+                    self.projects_selector.selected =
+                        self.projects_selector.filtered.len() - 1;
                 }
             },
             Mode::Zones => {
-                if !self.zones_filtered.is_empty() {
-                    self.zones_selected = self.zones_filtered.len() - 1;
+                if !self.zones_selector.filtered.is_empty() {
+                    self.zones_selector.selected = self.zones_selector.filtered.len() - 1;
                 }
             },
             _ => {
                 if !self.filtered_items.is_empty() {
-                    self.selected = self.filtered_items.len() - 1;
+                    self.nav.selected = self.filtered_items.len() - 1;
                 }
             },
         }
@@ -579,20 +770,21 @@ impl App {
     pub fn page_down(&mut self, page_size: usize) {
         match self.mode {
             Mode::Projects => {
-                if !self.projects_filtered.is_empty() {
-                    self.projects_selected =
-                        (self.projects_selected + page_size).min(self.projects_filtered.len() - 1);
+                if !self.projects_selector.filtered.is_empty() {
+                    self.projects_selector.selected = (self.projects_selector.selected + page_size)
+                        .min(self.projects_selector.filtered.len() - 1);
                 }
             },
             Mode::Zones => {
-                if !self.zones_filtered.is_empty() {
-                    self.zones_selected =
-                        (self.zones_selected + page_size).min(self.zones_filtered.len() - 1);
+                if !self.zones_selector.filtered.is_empty() {
+                    self.zones_selector.selected = (self.zones_selector.selected + page_size)
+                        .min(self.zones_selector.filtered.len() - 1);
                 }
             },
             _ => {
                 if !self.filtered_items.is_empty() {
-                    self.selected = (self.selected + page_size).min(self.filtered_items.len() - 1);
+                    self.nav.selected =
+                        (self.nav.selected + page_size).min(self.filtered_items.len() - 1);
                 }
             },
         }
@@ -601,13 +793,15 @@ impl App {
     pub fn page_up(&mut self, page_size: usize) {
         match self.mode {
             Mode::Projects => {
-                self.projects_selected = self.projects_selected.saturating_sub(page_size);
+                self.projects_selector.selected =
+                    self.projects_selector.selected.saturating_sub(page_size);
             },
             Mode::Zones => {
-                self.zones_selected = self.zones_selected.saturating_sub(page_size);
+                self.zones_selector.selected =
+                    self.zones_selector.selected.saturating_sub(page_size);
             },
             _ => {
-                self.selected = self.selected.saturating_sub(page_size);
+                self.nav.selected = self.nav.selected.saturating_sub(page_size);
             },
         }
     }
@@ -618,67 +812,43 @@ impl App {
 
     pub fn enter_command_mode(&mut self) {
         self.mode = Mode::Command;
-        self.command_text.clear();
-        self.command_suggestions = self.get_available_commands();
-        self.command_suggestion_selected = 0;
-        self.command_preview = None;
+        self.command.text.clear();
+        self.command.suggestions = self.get_available_commands();
+        self.command.suggestion_selected = 0;
+        self.command.preview = None;
     }
 
     pub fn update_command_suggestions(&mut self) {
-        let input = self.command_text.to_lowercase();
+        let input = self.command.text.to_lowercase();
         let all_commands = self.get_available_commands();
 
         if input.is_empty() {
-            self.command_suggestions = all_commands;
+            self.command.suggestions = all_commands;
         } else {
-            self.command_suggestions = all_commands
+            self.command.suggestions = all_commands
                 .into_iter()
                 .filter(|cmd| cmd.contains(&input))
                 .collect();
         }
 
-        if self.command_suggestion_selected >= self.command_suggestions.len() {
-            self.command_suggestion_selected = 0;
+        if self.command.suggestion_selected >= self.command.suggestions.len() {
+            self.command.suggestion_selected = 0;
         }
 
-        self.update_preview();
-    }
-
-    fn update_preview(&mut self) {
-        if self.command_suggestions.is_empty() {
-            self.command_preview = None;
-        } else {
-            self.command_preview = self
-                .command_suggestions
-                .get(self.command_suggestion_selected)
-                .cloned();
-        }
+        self.command.update_preview();
     }
 
     pub fn next_suggestion(&mut self) {
-        if !self.command_suggestions.is_empty() {
-            self.command_suggestion_selected =
-                (self.command_suggestion_selected + 1) % self.command_suggestions.len();
-            self.update_preview();
-        }
+        self.command.next_suggestion();
     }
 
     pub fn prev_suggestion(&mut self) {
-        if !self.command_suggestions.is_empty() {
-            if self.command_suggestion_selected == 0 {
-                self.command_suggestion_selected = self.command_suggestions.len() - 1;
-            } else {
-                self.command_suggestion_selected -= 1;
-            }
-            self.update_preview();
-        }
+        self.command.prev_suggestion();
     }
 
     pub fn apply_suggestion(&mut self) {
-        if let Some(preview) = &self.command_preview {
-            self.command_text = preview.clone();
-            self.update_command_suggestions();
-        }
+        self.command.apply_suggestion();
+        self.update_command_suggestions();
     }
 
     pub fn enter_help_mode(&mut self) {
@@ -691,13 +861,13 @@ impl App {
         }
 
         self.mode = Mode::Describe;
-        self.describe_scroll = 0;
-        self.describe_data = None;
+        self.describe.scroll = 0;
+        self.describe.data = None;
 
         // For now, just show the list data
         // TODO: Fetch detailed data via describe API
         if let Some(item) = self.selected_item().cloned() {
-            self.describe_data = Some(item);
+            self.describe.data = Some(item);
         }
     }
 
@@ -745,24 +915,12 @@ impl App {
     }
 
     pub fn enter_projects_mode(&mut self) {
-        self.projects_search_text.clear();
-        self.projects_filtered = self.available_projects.clone();
-        self.projects_selected = self
-            .projects_filtered
-            .iter()
-            .position(|p| p == &self.project)
-            .unwrap_or(0);
+        self.projects_selector.init(&self.available_projects, &self.project);
         self.mode = Mode::Projects;
     }
 
     pub fn enter_zones_mode(&mut self) {
-        self.zones_search_text.clear();
-        self.zones_filtered = self.available_zones.clone();
-        self.zones_selected = self
-            .zones_filtered
-            .iter()
-            .position(|z| z == &self.zone)
-            .unwrap_or(0);
+        self.zones_selector.init(&self.available_zones, &self.zone);
         self.mode = Mode::Zones;
     }
 
@@ -935,39 +1093,11 @@ impl App {
     // =========================================================================
 
     pub fn apply_projects_filter(&mut self) {
-        let filter = self.projects_search_text.to_lowercase();
-        if filter.is_empty() {
-            self.projects_filtered = self.available_projects.clone();
-        } else {
-            self.projects_filtered = self
-                .available_projects
-                .iter()
-                .filter(|p| p.to_lowercase().contains(&filter))
-                .cloned()
-                .collect();
-        }
-        // Reset selection if out of bounds
-        if self.projects_selected >= self.projects_filtered.len() {
-            self.projects_selected = 0;
-        }
+        self.projects_selector.apply_filter(&self.available_projects);
     }
 
     pub fn apply_zones_filter(&mut self) {
-        let filter = self.zones_search_text.to_lowercase();
-        if filter.is_empty() {
-            self.zones_filtered = self.available_zones.clone();
-        } else {
-            self.zones_filtered = self
-                .available_zones
-                .iter()
-                .filter(|z| z.to_lowercase().contains(&filter))
-                .cloned()
-                .collect();
-        }
-        // Reset selection if out of bounds
-        if self.zones_selected >= self.zones_filtered.len() {
-            self.zones_selected = 0;
-        }
+        self.zones_selector.apply_filter(&self.available_zones);
     }
 
     // =========================================================================
@@ -975,23 +1105,23 @@ impl App {
     // =========================================================================
 
     pub fn sort_by_column(&mut self, column_index: usize) {
-        if let Some(current) = self.sort_column {
+        if let Some(current) = self.filter_sort.sort_column {
             if current == column_index {
                 // Toggle direction
-                self.sort_ascending = !self.sort_ascending;
+                self.filter_sort.sort_ascending = !self.filter_sort.sort_ascending;
             } else {
-                self.sort_column = Some(column_index);
-                self.sort_ascending = true;
+                self.filter_sort.sort_column = Some(column_index);
+                self.filter_sort.sort_ascending = true;
             }
         } else {
-            self.sort_column = Some(column_index);
-            self.sort_ascending = true;
+            self.filter_sort.sort_column = Some(column_index);
+            self.filter_sort.sort_ascending = true;
         }
         self.apply_sort();
     }
 
     pub fn apply_sort(&mut self) {
-        let Some(col_idx) = self.sort_column else {
+        let Some(col_idx) = self.filter_sort.sort_column else {
             return;
         };
         let Some(resource) = self.current_resource() else {
@@ -1002,7 +1132,7 @@ impl App {
         };
 
         let json_path = column.json_path.clone();
-        let ascending = self.sort_ascending;
+        let ascending = self.filter_sort.sort_ascending;
 
         self.filtered_items.sort_by(|a, b| {
             let val_a = extract_json_value(a, &json_path);
@@ -1023,14 +1153,14 @@ impl App {
     }
 
     pub fn clear_sort(&mut self) {
-        self.sort_column = None;
+        self.filter_sort.clear_sort();
         self.apply_filter(); // Re-apply filter to restore original order
     }
 
     pub fn exit_mode(&mut self) {
         self.mode = Mode::Normal;
         self.pending_action = None;
-        self.describe_data = None;
+        self.describe.data = None;
     }
 
     // =========================================================================
@@ -1043,17 +1173,12 @@ impl App {
             return Ok(());
         }
 
-        self.parent_context = None;
-        self.navigation_stack.clear();
+        self.nav.clear_hierarchy();
         self.current_resource_key = resource_key.to_string();
-        self.selected = 0;
-        self.filter_text.clear();
-        self.filter_active = false;
+        self.nav.reset();
+        self.filter_sort.reset();
         self.mode = Mode::Normal;
-        // Clear selection and scroll state
-        self.selected_indices.clear();
-        self.visual_mode = false;
-        self.scroll_offset = 0;
+        self.selection.clear();
 
         self.reset_pagination();
         self.refresh_current().await?;
@@ -1090,24 +1215,20 @@ impl App {
             id
         };
 
-        if let Some(ctx) = self.parent_context.take() {
-            self.navigation_stack.push(ctx);
+        if let Some(ctx) = self.nav.parent_context.take() {
+            self.nav.navigation_stack.push(ctx);
         }
 
-        self.parent_context = Some(ParentContext {
+        self.nav.parent_context = Some(ParentContext {
             resource_key: self.current_resource_key.clone(),
             item: selected_item,
             display_name: display,
         });
 
         self.current_resource_key = sub_resource_key.to_string();
-        self.selected = 0;
-        self.filter_text.clear();
-        self.filter_active = false;
-        // Clear selection and scroll state
-        self.selected_indices.clear();
-        self.visual_mode = false;
-        self.scroll_offset = 0;
+        self.nav.reset();
+        self.filter_sort.reset();
+        self.selection.clear();
 
         self.reset_pagination();
         self.refresh_current().await?;
@@ -1115,16 +1236,12 @@ impl App {
     }
 
     pub async fn navigate_back(&mut self) -> Result<()> {
-        if let Some(parent) = self.parent_context.take() {
-            self.parent_context = self.navigation_stack.pop();
+        if let Some(parent) = self.nav.parent_context.take() {
+            self.nav.parent_context = self.nav.navigation_stack.pop();
             self.current_resource_key = parent.resource_key;
-            self.selected = 0;
-            self.filter_text.clear();
-            self.filter_active = false;
-            // Clear selection and scroll state
-            self.selected_indices.clear();
-            self.visual_mode = false;
-            self.scroll_offset = 0;
+            self.nav.reset();
+            self.filter_sort.reset();
+            self.selection.clear();
 
             self.reset_pagination();
             self.refresh_current().await?;
@@ -1135,11 +1252,11 @@ impl App {
     pub fn get_breadcrumb(&self) -> Vec<String> {
         let mut path = Vec::new();
 
-        for ctx in &self.navigation_stack {
+        for ctx in &self.nav.navigation_stack {
             path.push(format!("{}:{}", ctx.resource_key, ctx.display_name));
         }
 
-        if let Some(ctx) = &self.parent_context {
+        if let Some(ctx) = &self.nav.parent_context {
             path.push(format!("{}:{}", ctx.resource_key, ctx.display_name));
         }
 
@@ -1178,8 +1295,7 @@ impl App {
     }
 
     pub async fn select_project(&mut self) -> Result<()> {
-        if let Some(project) = self.projects_filtered.get(self.projects_selected) {
-            let project = project.clone();
+        if let Some(project) = self.projects_selector.current().cloned() {
             self.switch_project(&project).await?;
             self.refresh_current().await?;
         }
@@ -1188,8 +1304,7 @@ impl App {
     }
 
     pub async fn select_zone(&mut self) -> Result<()> {
-        if let Some(zone) = self.zones_filtered.get(self.zones_selected) {
-            let zone = zone.clone();
+        if let Some(zone) = self.zones_selector.current().cloned() {
             self.switch_zone(&zone).await?;
             self.refresh_current().await?;
         }
@@ -1202,16 +1317,16 @@ impl App {
     // =========================================================================
 
     pub async fn execute_command(&mut self) -> Result<bool> {
-        let command_text = if self.command_text.is_empty() {
-            self.command_preview.clone().unwrap_or_default()
-        } else if let Some(preview) = &self.command_preview {
-            if preview.contains(&self.command_text) {
+        let command_text = if self.command.text.is_empty() {
+            self.command.preview.clone().unwrap_or_default()
+        } else if let Some(preview) = &self.command.preview {
+            if preview.contains(&self.command.text) {
                 preview.clone()
             } else {
-                self.command_text.clone()
+                self.command.text.clone()
             }
         } else {
-            self.command_text.clone()
+            self.command.text.clone()
         };
 
         let parts: Vec<&str> = command_text.split_whitespace().collect();
@@ -1313,28 +1428,30 @@ impl App {
 
     /// Update the viewport height (called from UI during render)
     pub fn update_viewport(&mut self, height: usize) {
-        self.viewport_height = height.max(1);
+        self.nav.viewport_height = height.max(1);
     }
 
     /// Ensure the selected item is visible in the viewport
     pub fn ensure_visible(&mut self) {
         if self.filtered_items.is_empty() {
-            self.scroll_offset = 0;
+            self.nav.scroll_offset = 0;
             return;
         }
 
-        let visible_height = self.viewport_height;
+        let visible_height = self.nav.viewport_height;
         let margin = 2; // Keep cursor at least this far from edge
 
         // If selected is above visible area, scroll up
-        if self.selected < self.scroll_offset + margin {
+        if self.nav.selected < self.nav.scroll_offset + margin {
             // Scroll so selected is near top with margin
-            self.scroll_offset = self.selected.saturating_sub(margin);
+            self.nav.scroll_offset = self.nav.selected.saturating_sub(margin);
         }
         // If selected is below visible area, scroll down
-        else if self.selected >= self.scroll_offset + visible_height.saturating_sub(margin) {
+        else if self.nav.selected >= self.nav.scroll_offset + visible_height.saturating_sub(margin)
+        {
             // Scroll so selected is near bottom with margin
-            self.scroll_offset = self
+            self.nav.scroll_offset = self
+                .nav
                 .selected
                 .saturating_sub(visible_height.saturating_sub(margin + 1));
         }
@@ -1343,14 +1460,15 @@ impl App {
         let max_offset = self
             .filtered_items
             .len()
-            .saturating_sub(self.viewport_height);
-        self.scroll_offset = self.scroll_offset.min(max_offset);
+            .saturating_sub(self.nav.viewport_height);
+        self.nav.scroll_offset = self.nav.scroll_offset.min(max_offset);
     }
 
     /// Get the range of visible items based on scroll offset and viewport
     pub fn visible_range(&self) -> Range<usize> {
-        let start = self.scroll_offset;
-        let end = (self.scroll_offset + self.viewport_height).min(self.filtered_items.len());
+        let start = self.nav.scroll_offset;
+        let end =
+            (self.nav.scroll_offset + self.nav.viewport_height).min(self.filtered_items.len());
         start..end
     }
 
@@ -1363,39 +1481,29 @@ impl App {
         if self.filtered_items.is_empty() {
             return;
         }
-
-        if self.selected_indices.contains(&self.selected) {
-            self.selected_indices.remove(&self.selected);
-        } else {
-            self.selected_indices.insert(self.selected);
-        }
+        self.selection.toggle(self.nav.selected);
     }
 
     /// Select all filtered items
     pub fn select_all(&mut self) {
-        self.selected_indices = (0..self.filtered_items.len()).collect();
+        self.selection.select_all(self.filtered_items.len());
     }
 
     /// Clear all selections
     pub fn clear_selection(&mut self) {
-        self.selected_indices.clear();
-        self.visual_mode = false;
+        self.selection.clear();
     }
 
     /// Check if an item at the given index is selected
     pub fn is_selected(&self, index: usize) -> bool {
-        self.selected_indices.contains(&index)
-    }
-
-    /// Get count of selected items
-    pub fn selection_count(&self) -> usize {
-        self.selected_indices.len()
+        self.selection.is_selected(index)
     }
 
     /// Get all selected items
     #[allow(dead_code)]
     pub fn selected_items(&self) -> Vec<&Value> {
-        self.selected_indices
+        self.selection
+            .indices
             .iter()
             .filter_map(|&idx| self.filtered_items.get(idx))
             .collect()
@@ -1407,7 +1515,8 @@ impl App {
             return Vec::new();
         };
 
-        self.selected_indices
+        self.selection
+            .indices
             .iter()
             .filter_map(|&idx| {
                 self.filtered_items.get(idx).map(|item| {
@@ -1424,11 +1533,7 @@ impl App {
 
     /// Toggle visual/multi-select mode
     pub fn toggle_visual_mode(&mut self) {
-        self.visual_mode = !self.visual_mode;
-        if !self.visual_mode {
-            // Optionally clear selection when exiting visual mode
-            // self.clear_selection();
-        }
+        self.selection.visual_mode = !self.selection.visual_mode;
     }
 
     /// Extend selection from current position (for Shift+j/k)
@@ -1438,12 +1543,12 @@ impl App {
         }
 
         // Select current item if not already
-        self.selected_indices.insert(self.selected);
+        self.selection.indices.insert(self.nav.selected);
 
         // Move down and select
-        if self.selected < self.filtered_items.len() - 1 {
-            self.selected += 1;
-            self.selected_indices.insert(self.selected);
+        if self.nav.selected < self.filtered_items.len() - 1 {
+            self.nav.selected += 1;
+            self.selection.indices.insert(self.nav.selected);
         }
     }
 
@@ -1454,12 +1559,12 @@ impl App {
         }
 
         // Select current item if not already
-        self.selected_indices.insert(self.selected);
+        self.selection.indices.insert(self.nav.selected);
 
         // Move up and select
-        if self.selected > 0 {
-            self.selected -= 1;
-            self.selected_indices.insert(self.selected);
+        if self.nav.selected > 0 {
+            self.nav.selected -= 1;
+            self.selection.indices.insert(self.nav.selected);
         }
     }
 }
