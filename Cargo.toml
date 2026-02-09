@@ -49,5 +49,5 @@ chrono = "0.4"
 [dev-dependencies]
 dirs = "6.0"
 wiremock = "0.6"
-proptest = "1.5"
+proptest = "1.10"
 tokio-test = "0.4"
