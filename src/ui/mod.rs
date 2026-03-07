@@ -35,6 +35,7 @@ mod dialog;
 mod header;
 mod help;
 mod notifications;
+mod prompt;
 mod projects;
 pub mod splash;
 mod zones;
@@ -101,6 +102,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
         },
         Mode::ColumnConfig => {
             column_config::render(f, app, f.area());
+        },
+        Mode::Prompt => {
+            prompt::render(f, app);
         },
         _ => {},
     }

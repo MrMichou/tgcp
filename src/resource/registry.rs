@@ -75,6 +75,18 @@ pub struct ActionDef {
     /// If true, this action is a shell command (SSH, exec, etc.)
     #[serde(default)]
     pub shell_action: bool,
+    /// If true, this action requires text input from the user before confirmation
+    #[serde(default)]
+    pub needs_input: bool,
+    /// Prompt text to display when requesting input
+    #[serde(default)]
+    pub input_prompt: Option<String>,
+    /// Parameter name to store the user input in
+    #[serde(default)]
+    pub input_param: Option<String>,
+    /// Required status for the resource (e.g., "TERMINATED" for machine type change)
+    #[serde(default)]
+    pub required_status: Option<String>,
 }
 
 impl ActionDef {

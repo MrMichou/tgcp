@@ -38,6 +38,7 @@ pub enum Mode {
     Describe,      // Viewing JSON details of selected item
     Notifications, // Notifications history panel
     ColumnConfig,  // Column visibility configuration
+    Prompt,        // Text input prompt for actions
 }
 
 /// State for column configuration overlay
@@ -67,6 +68,22 @@ pub struct PendingAction {
     pub message: String,
     pub destructive: bool,
     pub selected_yes: bool,
+    pub params: serde_json::Value,
+}
+
+/// State for text input prompt (used by actions that need user input)
+#[derive(Debug, Clone)]
+pub struct PromptState {
+    pub title: String,
+    pub input: String,
+    pub hint: String,
+    pub action_def_sdk_method: String,
+    pub resource_id: String,
+    pub service: String,
+    pub param_name: String,
+    pub confirm_message: String,
+    pub destructive: bool,
+    pub default_yes: bool,
 }
 
 /// Parent context for hierarchical navigation
@@ -329,8 +346,9 @@ pub struct App {
     pub available_projects: Vec<String>,
     pub available_zones: Vec<String>,
 
-    // Confirmation
+    // Confirmation and prompt
     pub pending_action: Option<PendingAction>,
+    pub prompt_state: Option<PromptState>,
 
     // UI state
     pub loading: bool,
@@ -434,6 +452,7 @@ impl App {
             available_projects,
             available_zones,
             pending_action: None,
+            prompt_state: None,
             loading: false,
             error_message: None,
             last_refresh: std::time::Instant::now(),
@@ -908,6 +927,7 @@ impl App {
             message: format!("{} '{}'?", message, resource_name),
             destructive: config.destructive,
             selected_yes: config.default_yes,
+            params: serde_json::Value::Null,
         })
     }
 
@@ -1159,6 +1179,7 @@ impl App {
     pub fn exit_mode(&mut self) {
         self.mode = Mode::Normal;
         self.pending_action = None;
+        self.prompt_state = None;
         self.describe.data = None;
     }
 

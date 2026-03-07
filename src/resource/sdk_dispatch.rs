@@ -194,12 +194,31 @@ async fn execute_compute_action(
     method: &str,
     client: &GcpClient,
     resource_id: &str,
-    _params: &Value,
+    params: &Value,
 ) -> Result<Value> {
     // Security: URL-encode resource_id to prevent URL manipulation
     let encoded_id = urlencoding::encode(resource_id);
 
     match method {
+        "set_machine_type" => {
+            let machine_type = params
+                .get("machine_type")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing machine_type parameter"))?;
+            // Security: validate machine type format (alphanumeric, hyphens only)
+            if !machine_type
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-')
+            {
+                return Err(anyhow::anyhow!("Invalid machine type format"));
+            }
+            let body = serde_json::json!({
+                "machineType": format!("zones/{}/machineTypes/{}", client.zone, machine_type)
+            });
+            let url =
+                client.compute_zonal_url(&format!("instances/{}/setMachineType", encoded_id));
+            client.post(&url, Some(&body)).await
+        },
         "start_instance" => {
             let url = client.compute_zonal_url(&format!("instances/{}/start", encoded_id));
             client.post(&url, None).await

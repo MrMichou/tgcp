@@ -632,11 +632,36 @@ fn post_process_item(mut item: Value, resource_def: &ResourceDef) -> Value {
         }
 
         // VM Instance specific fields
-        // Count attached disks
-        if let Some(disks) = map.get("disks").and_then(|v| v.as_array()) {
+        // Count attached disks and summarize types
+        if let Some(disks) = map.get("disks").and_then(|v| v.as_array()).cloned() {
             map.insert(
                 "disks_count".to_string(),
                 Value::String(disks.len().to_string()),
+            );
+
+            // Build disk summary for machine type change warnings
+            let mut persistent_count = 0u32;
+            let mut local_ssd_count = 0u32;
+            for disk in &disks {
+                match disk.get("type").and_then(|v| v.as_str()).unwrap_or("") {
+                    "SCRATCH" => local_ssd_count += 1,
+                    _ => persistent_count += 1,
+                }
+            }
+            let mut parts = Vec::new();
+            if persistent_count > 0 {
+                parts.push(format!("{} persistent", persistent_count));
+            }
+            if local_ssd_count > 0 {
+                parts.push(format!("{} local SSD", local_ssd_count));
+            }
+            map.insert(
+                "disks_summary".to_string(),
+                Value::String(parts.join(", ")),
+            );
+            map.insert(
+                "has_local_ssd".to_string(),
+                Value::String((local_ssd_count > 0).to_string()),
             );
         }
 

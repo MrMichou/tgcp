@@ -50,6 +50,7 @@ async fn handle_key_event(app: &mut App, code: KeyCode, modifiers: KeyModifiers)
         Mode::Describe => handle_describe_mode(app, code, modifiers),
         Mode::Notifications => handle_notifications_mode(app, code),
         Mode::ColumnConfig => handle_column_config_mode(app, code),
+        Mode::Prompt => handle_prompt_mode(app, code, modifiers),
     }
 }
 
@@ -313,6 +314,65 @@ async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -
         return handle_shell_action(app, action_def, &resource_id, &item).await;
     }
 
+    // Handle actions that need text input from user
+    if action_def.needs_input {
+        // Check required status if specified
+        if let Some(ref required_status) = action_def.required_status {
+            let status = extract_json_value(&item, "status");
+            if status != *required_status {
+                app.show_warning(&format!(
+                    "Instance must be {} to {}",
+                    required_status.to_lowercase(),
+                    action_def.display_name.to_lowercase()
+                ));
+                return Ok(());
+            }
+        }
+
+        // Get current machine type and disk info for context
+        let current_value = extract_json_value(&item, "machineType_short");
+        let disks_summary = extract_json_value(&item, "disks_summary");
+        let has_local_ssd = extract_json_value(&item, "has_local_ssd") == "true";
+
+        let mut hint_parts = Vec::new();
+        if current_value != "-" {
+            hint_parts.push(format!("Current: {}", current_value));
+        }
+        if disks_summary != "-" {
+            hint_parts.push(format!("Disks: {}", disks_summary));
+        }
+        if has_local_ssd {
+            hint_parts.push("Warning: local SSDs limit compatible types".to_string());
+        }
+        let hint = hint_parts.join(" | ");
+
+        let confirm_config = action_def.get_confirm_config().unwrap_or_default();
+        let confirm_message = confirm_config
+            .message
+            .unwrap_or_else(|| action_def.display_name.clone());
+
+        app.prompt_state = Some(crate::app::PromptState {
+            title: action_def
+                .input_prompt
+                .clone()
+                .unwrap_or_else(|| "Enter value".to_string()),
+            input: String::new(),
+            hint,
+            action_def_sdk_method: action_def.sdk_method.clone(),
+            resource_id: resource_id.clone(),
+            service: resource.service.clone(),
+            param_name: action_def
+                .input_param
+                .clone()
+                .unwrap_or_else(|| "value".to_string()),
+            confirm_message,
+            destructive: confirm_config.destructive,
+            default_yes: confirm_config.default_yes,
+        });
+        app.mode = crate::app::Mode::Prompt;
+        return Ok(());
+    }
+
     if action_def.requires_confirm() {
         if let Some(pending) = app.create_pending_action(action_def, &resource_id) {
             app.enter_confirm_mode(pending);
@@ -397,6 +457,7 @@ async fn handle_bulk_action(
         message,
         destructive: is_destructive,
         selected_yes: false,
+        params: serde_json::Value::Null,
     };
 
     app.enter_confirm_mode(pending);
@@ -580,7 +641,7 @@ async fn handle_confirm_mode(
                                 &pending.sdk_method,
                                 &app.client,
                                 resource_id,
-                                &serde_json::Value::Null,
+                                &pending.params,
                             )
                             .await;
 
@@ -630,7 +691,7 @@ async fn handle_confirm_mode(
                             &pending.sdk_method,
                             &app.client,
                             &pending.resource_id,
-                            &serde_json::Value::Null,
+                            &pending.params,
                         )
                         .await;
 
@@ -658,6 +719,60 @@ async fn handle_confirm_mode(
                 }
             }
             app.exit_mode();
+        },
+        _ => {},
+    }
+    Ok(false)
+}
+
+fn handle_prompt_mode(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Result<bool> {
+    match code {
+        KeyCode::Esc => {
+            app.exit_mode();
+        },
+        KeyCode::Enter => {
+            if let Some(prompt) = app.prompt_state.take() {
+                if prompt.input.trim().is_empty() {
+                    // Re-enter prompt mode if input is empty
+                    app.prompt_state = Some(prompt);
+                    return Ok(false);
+                }
+
+                let input_value = prompt.input.trim().to_string();
+
+                // Build resource name for the confirmation message
+                let resource_name = &prompt.resource_id;
+                let message = format!(
+                    "{} '{}' to '{}'?",
+                    prompt.confirm_message, resource_name, input_value
+                );
+
+                // Build params with the user input
+                let params =
+                    serde_json::json!({ prompt.param_name.clone(): input_value });
+
+                let pending = crate::app::PendingAction {
+                    service: prompt.service,
+                    sdk_method: prompt.action_def_sdk_method,
+                    resource_id: prompt.resource_id,
+                    message,
+                    destructive: prompt.destructive,
+                    selected_yes: prompt.default_yes,
+                    params,
+                };
+
+                app.enter_confirm_mode(pending);
+            }
+        },
+        KeyCode::Backspace => {
+            if let Some(ref mut prompt) = app.prompt_state {
+                prompt.input.pop();
+            }
+        },
+        KeyCode::Char(c) => {
+            if let Some(ref mut prompt) = app.prompt_state {
+                prompt.input.push(c);
+            }
         },
         _ => {},
     }
