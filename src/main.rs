@@ -95,7 +95,7 @@ fn setup_logging(level: LogLevel) -> Option<tracing_appender::non_blocking::Work
         Err(e) => {
             eprintln!("Warning: could not open log file {:?}: {}", log_path, e);
             return None;
-        }
+        },
     };
 
     let (non_blocking, guard) = tracing_appender::non_blocking(file);

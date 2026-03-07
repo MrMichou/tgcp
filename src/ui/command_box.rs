@@ -51,7 +51,10 @@ pub fn render(f: &mut Frame, app: &App) {
         } else if preview.starts_with(&app.command.text) {
             // Use char count to safely skip past the typed text, avoiding
             // panics on multi-byte UTF-8 boundaries.
-            let remaining: String = preview.chars().skip(app.command.text.chars().count()).collect();
+            let remaining: String = preview
+                .chars()
+                .skip(app.command.text.chars().count())
+                .collect();
             Line::from(vec![
                 Span::styled(":", Style::default().fg(Color::Cyan)),
                 Span::styled(app.command.text.clone(), Style::default().fg(Color::White)),

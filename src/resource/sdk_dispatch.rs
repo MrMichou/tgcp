@@ -215,8 +215,7 @@ async fn execute_compute_action(
             let body = serde_json::json!({
                 "machineType": format!("zones/{}/machineTypes/{}", client.zone, machine_type)
             });
-            let url =
-                client.compute_zonal_url(&format!("instances/{}/setMachineType", encoded_id));
+            let url = client.compute_zonal_url(&format!("instances/{}/setMachineType", encoded_id));
             client.post(&url, Some(&body)).await
         },
         "start_instance" => {

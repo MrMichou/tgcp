@@ -655,10 +655,7 @@ fn post_process_item(mut item: Value, resource_def: &ResourceDef) -> Value {
             if local_ssd_count > 0 {
                 parts.push(format!("{} local SSD", local_ssd_count));
             }
-            map.insert(
-                "disks_summary".to_string(),
-                Value::String(parts.join(", ")),
-            );
+            map.insert("disks_summary".to_string(), Value::String(parts.join(", ")));
             map.insert(
                 "has_local_ssd".to_string(),
                 Value::String((local_ssd_count > 0).to_string()),

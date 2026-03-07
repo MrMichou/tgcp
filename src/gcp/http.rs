@@ -167,8 +167,7 @@ impl GcpHttpClient {
             if response_body.is_empty() {
                 return Ok(Value::Null);
             }
-            return serde_json::from_str(&response_body)
-                .context("Failed to parse response JSON");
+            return serde_json::from_str(&response_body).context("Failed to parse response JSON");
         }
 
         // Security: Only log sanitized/truncated error body to avoid leaking sensitive data
