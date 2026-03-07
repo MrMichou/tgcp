@@ -110,17 +110,11 @@ async fn invoke_compute(method: &str, client: &GcpClient, params: &Value) -> Res
                     )
                 } else {
                     // Fallback: use aggregated get (single instance)
-                    client.compute_zonal_url(&format!(
-                        "instances/{}",
-                        urlencoding::encode(&name)
-                    ))
+                    client.compute_zonal_url(&format!("instances/{}", urlencoding::encode(&name)))
                 }
             } else {
                 // Security: URL-encode resource name to prevent injection
-                client.compute_zonal_url(&format!(
-                    "instances/{}",
-                    urlencoding::encode(&name)
-                ))
+                client.compute_zonal_url(&format!("instances/{}", urlencoding::encode(&name)))
             };
             client.get(&url).await
         },
