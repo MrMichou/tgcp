@@ -484,6 +484,7 @@ fn render_describe_view(f: &mut Frame, app: &App, area: Rect) {
 
     // Calculate max scroll based on inner area (content area without borders)
     let visible_lines = inner_area.height as usize;
+    app.describe.visible_lines.set(visible_lines);
     let max_scroll = total_lines.saturating_sub(visible_lines);
     let scroll = app.describe.scroll.min(max_scroll);
 

@@ -346,9 +346,10 @@ pub fn console_url(resource_type: &str, resource_name: &str, project: &str, zone
     }
 }
 
-/// Terminal preparation for shell execution
+/// Terminal preparation for shell execution.
+/// Implements `Drop` to ensure terminal is always restored, even if code panics.
 pub struct TerminalGuard {
-    _private: (),
+    restored: bool,
 }
 
 impl TerminalGuard {
@@ -366,11 +367,16 @@ impl TerminalGuard {
         )
         .context("Failed to leave alternate screen")?;
 
-        Ok(Self { _private: () })
+        Ok(Self { restored: false })
     }
 
     /// Restore terminal after command completes
-    pub fn restore(self) -> Result<()> {
+    pub fn restore(mut self) -> Result<()> {
+        self.restored = true;
+        Self::do_restore()
+    }
+
+    fn do_restore() -> Result<()> {
         // Re-enter alternate screen
         crossterm::execute!(
             std::io::stdout(),
@@ -383,6 +389,14 @@ impl TerminalGuard {
         crossterm::terminal::enable_raw_mode().context("Failed to enable raw mode")?;
 
         Ok(())
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        if !self.restored {
+            let _ = Self::do_restore();
+        }
     }
 }
 

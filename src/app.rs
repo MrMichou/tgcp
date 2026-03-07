@@ -314,6 +314,9 @@ pub struct DescribeState {
     pub scroll: usize,
     /// Cached data for describe view
     pub data: Option<Value>,
+    /// Last computed visible lines from render (updated each frame).
+    /// Uses Cell for interior mutability so render (&App) can update it.
+    pub visible_lines: std::cell::Cell<usize>,
 }
 
 /// Main application state
