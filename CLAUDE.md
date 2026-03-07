@@ -80,6 +80,7 @@ src/
     ├── header.rs     # Header bar with project/zone info
     ├── help.rs       # Help overlay (? key)
     ├── dialog.rs     # Confirmation dialogs
+    ├── prompt.rs     # Text input prompt for actions (e.g., change machine type)
     ├── command_box.rs # Command mode (: key)
     ├── projects.rs   # Project selector
     └── zones.rs      # Zone selector
@@ -91,7 +92,7 @@ src/
 
 2. **SDK Dispatch Pattern**: `sdk_dispatch.rs` maps abstract method names (e.g., `list_instances`) to concrete REST API calls. This decouples resource definitions from API implementation details.
 
-3. **Mode-Based UI**: The app uses distinct modes (Normal, Command, Help, Confirm, Describe, Projects, Zones) with mode-specific event handling.
+3. **Mode-Based UI**: The app uses distinct modes (Normal, Command, Help, Confirm, Prompt, Describe, Projects, Zones) with mode-specific event handling.
 
 4. **Hierarchical Navigation**: Resources can have sub-resources (e.g., VM → Disks, Bucket → Objects) with breadcrumb navigation.
 
@@ -199,6 +200,7 @@ cargo run -- --log-level debug
 | `s` | Start instance |
 | `S` | Stop instance |
 | `Ctrl+r` | Reset instance |
+| `m` | Change machine type (stopped instances only) |
 | `x` | SSH to instance |
 | `X` | SSH via IAP tunnel |
 | `C` | Open in GCP Console |
@@ -477,6 +479,35 @@ In the parent resource definition:
   }
 ]
 ```
+
+#### Add Action with User Input
+
+Actions can require text input before confirmation using the `needs_input` flag.
+The input is passed as a parameter to `execute_action()` via `PendingAction.params`.
+
+```json
+{
+  "key": "m",
+  "display_name": "Change Machine Type",
+  "shortcut": "m",
+  "sdk_method": "set_machine_type",
+  "needs_input": true,
+  "input_prompt": "New machine type (e.g. e2-standard-4)",
+  "input_param": "machine_type",
+  "required_status": "TERMINATED",
+  "confirm": {
+    "message": "Change machine type of instance",
+    "default_yes": false,
+    "destructive": false
+  }
+}
+```
+
+Action definition fields for input actions:
+- `needs_input`: If true, shows a text input prompt before confirmation
+- `input_prompt`: Text displayed in the prompt dialog
+- `input_param`: Parameter name used to pass the input to `execute_action()`
+- `required_status`: If set, the action is only allowed when the resource status matches (e.g., `"TERMINATED"`)
 
 ---
 

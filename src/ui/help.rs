@@ -153,6 +153,10 @@ pub fn render(f: &mut Frame, _app: &App) {
             Span::raw("SSH via IAP tunnel"),
         ]),
         Line::from(vec![
+            Span::styled("  m               ", Style::default().fg(Color::Yellow)),
+            Span::raw("Change machine type (stopped only)"),
+        ]),
+        Line::from(vec![
             Span::styled("  C               ", Style::default().fg(Color::Green)),
             Span::raw("Open in GCP Console"),
         ]),
