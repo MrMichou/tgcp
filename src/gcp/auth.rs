@@ -231,11 +231,27 @@ pub fn get_default_project() -> Option<String> {
     None
 }
 
+/// Validate a GCP zone name format
+/// Zone names follow the pattern: region-zone (e.g., us-central1-a)
+/// Only alphanumeric characters and hyphens are allowed
+fn validate_zone_name(zone: &str) -> bool {
+    if zone.is_empty() || zone.len() > 63 {
+        return false;
+    }
+    zone.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 /// Get the default zone from gcloud configuration
+/// Security: Validates zone format and config name before returning
 pub fn get_default_zone() -> Option<String> {
     // Check environment variable first
     if let Ok(zone) = std::env::var("CLOUDSDK_COMPUTE_ZONE") {
-        return Some(zone);
+        if validate_zone_name(&zone) {
+            return Some(zone);
+        }
+        tracing::warn!("Invalid zone format in CLOUDSDK_COMPUTE_ZONE");
+        return None;
     }
 
     // Try to read from gcloud config
@@ -245,6 +261,16 @@ pub fn get_default_zone() -> Option<String> {
     let active_config_path = config_dir.join("active_config");
     if let Ok(active_config) = std::fs::read_to_string(&active_config_path) {
         let config_name = active_config.trim();
+
+        // Security: Validate config name to prevent path traversal
+        if !config_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            tracing::warn!("Invalid characters in active_config name");
+            return None;
+        }
+
         let config_path = config_dir
             .join("configurations")
             .join(format!("config_{}", config_name));
@@ -253,13 +279,20 @@ pub fn get_default_zone() -> Option<String> {
             let mut in_compute_section = false;
             for line in content.lines() {
                 let line = line.trim();
+                if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+                    continue;
+                }
                 if line == "[compute]" {
                     in_compute_section = true;
                 } else if line.starts_with('[') {
                     in_compute_section = false;
                 } else if in_compute_section && line.starts_with("zone") {
                     if let Some(value) = line.split('=').nth(1) {
-                        return Some(value.trim().to_string());
+                        let zone = value.trim().to_string();
+                        if validate_zone_name(&zone) {
+                            return Some(zone);
+                        }
+                        tracing::warn!("Invalid zone format in gcloud config");
                     }
                 }
             }

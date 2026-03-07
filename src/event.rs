@@ -896,7 +896,7 @@ fn handle_describe_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -
             app.describe.scroll = 0;
         },
         KeyCode::Char('G') | KeyCode::End => {
-            app.describe_scroll_to_bottom(30); // Approximate visible lines
+            app.describe_scroll_to_bottom(app.describe.visible_lines.get());
         },
         _ => {},
     }

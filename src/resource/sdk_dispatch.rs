@@ -97,9 +97,31 @@ async fn invoke_compute(method: &str, client: &GcpClient, params: &Value) -> Res
         },
         "get_instance" => {
             let name = get_param_str(params, "name")?;
-            // Security: URL-encode resource name to prevent injection
-            let url =
-                client.compute_zonal_url(&format!("instances/{}", urlencoding::encode(&name)));
+            // When zone is "all" (aggregated view), extract the actual zone
+            // from the instance's own zone field to build a valid URL.
+            let zone_override = get_param_str_opt(params, "zone");
+            let url = if client.zone == "all" {
+                if let Some(zone) = zone_override {
+                    format!(
+                        "https://compute.googleapis.com/compute/v1/projects/{}/zones/{}/instances/{}",
+                        client.project_id,
+                        urlencoding::encode(&zone),
+                        urlencoding::encode(&name)
+                    )
+                } else {
+                    // Fallback: use aggregated get (single instance)
+                    client.compute_zonal_url(&format!(
+                        "instances/{}",
+                        urlencoding::encode(&name)
+                    ))
+                }
+            } else {
+                // Security: URL-encode resource name to prevent injection
+                client.compute_zonal_url(&format!(
+                    "instances/{}",
+                    urlencoding::encode(&name)
+                ))
+            };
             client.get(&url).await
         },
         // CDN / Load Balancing resources

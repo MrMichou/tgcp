@@ -110,11 +110,14 @@ pub fn render(f: &mut Frame, app: &App) {
 
     f.render_stateful_widget(table, inner_area, &mut state);
 
-    // Render help text at bottom
+    // Render help text at bottom (guard against underflow on small terminals)
+    if popup_area.height < 2 || popup_area.width < 4 {
+        return;
+    }
     let help_area = Rect::new(
         popup_area.x + 1,
         popup_area.y + popup_area.height - 1,
-        popup_area.width - 2,
+        popup_area.width.saturating_sub(2),
         1,
     );
     let help = Line::from(vec![
