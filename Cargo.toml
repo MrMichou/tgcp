@@ -46,6 +46,30 @@ dirs = "6.0"
 uuid = { version = "1.20", features = ["v4"] }
 chrono = "0.4"
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/tgcp-{ target }{ archive-suffix }"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/tgcp-linux-x86_64.tar.gz"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-musl]
+pkg-url = "{ repo }/releases/download/v{ version }/tgcp-linux-x86_64-musl.tar.gz"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/tgcp-linux-aarch64.tar.gz"
+
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/tgcp-darwin-x86_64.tar.gz"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/tgcp-darwin-aarch64.tar.gz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/tgcp-windows-x86_64.exe.zip"
+pkg-fmt = "zip"
+
 [dev-dependencies]
 dirs = "6.0"
 wiremock = "0.6"
