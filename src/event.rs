@@ -748,8 +748,7 @@ fn handle_prompt_mode(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) ->
                 );
 
                 // Build params with the user input
-                let params =
-                    serde_json::json!({ prompt.param_name.clone(): input_value });
+                let params = serde_json::json!({ prompt.param_name.clone(): input_value });
 
                 let pending = crate::app::PendingAction {
                     service: prompt.service,

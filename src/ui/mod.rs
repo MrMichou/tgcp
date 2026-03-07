@@ -35,8 +35,8 @@ mod dialog;
 mod header;
 mod help;
 mod notifications;
-mod prompt;
 mod projects;
+mod prompt;
 pub mod splash;
 mod zones;
 
