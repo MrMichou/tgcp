@@ -86,11 +86,17 @@ fn setup_logging(level: LogLevel) -> Option<tracing_appender::non_blocking::Work
         let _ = std::fs::create_dir_all(parent);
     }
 
-    let file = std::fs::OpenOptions::new()
+    let file = match std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&log_path)
-        .expect("Failed to open log file");
+    {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Warning: could not open log file {:?}: {}", log_path, e);
+            return None;
+        }
+    };
 
     let (non_blocking, guard) = tracing_appender::non_blocking(file);
 
@@ -130,6 +136,16 @@ async fn main() -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+
+    // Install panic hook to restore terminal state before printing panic info.
+    // Without this, a panic leaves the terminal in raw mode (no echo, no line editing).
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+        original_hook(panic_info);
+    }));
+
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 

@@ -1140,6 +1140,10 @@ impl App {
     }
 
     pub fn apply_sort(&mut self) {
+        // Clear selections: after sorting, indices refer to different items,
+        // which could cause bulk actions to target the wrong resources.
+        self.selection.clear();
+
         let Some(col_idx) = self.filter_sort.sort_column else {
             return;
         };
