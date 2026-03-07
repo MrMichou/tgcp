@@ -8,7 +8,7 @@ use gcp_auth::TokenProvider;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 /// Default scopes for GCP API access
 pub const DEFAULT_SCOPES: &[&str] = &["https://www.googleapis.com/auth/cloud-platform"];
@@ -24,7 +24,7 @@ const DEFAULT_TOKEN_TTL: Duration = Duration::from_secs(30 * 60);
 #[derive(Clone)]
 pub struct GcpCredentials {
     provider: Arc<dyn TokenProvider>,
-    token_cache: Arc<RwLock<Option<CachedToken>>>,
+    token_cache: Arc<Mutex<Option<CachedToken>>>,
 }
 
 #[derive(Clone)]
@@ -50,26 +50,26 @@ impl GcpCredentials {
 
         Ok(Self {
             provider,
-            token_cache: Arc::new(RwLock::new(None)),
+            token_cache: Arc::new(Mutex::new(None)),
         })
     }
 
     /// Get an access token for API calls
-    /// Security: Checks token expiry before returning cached token
+    /// Security: Checks token expiry before returning cached token.
+    /// Uses a single Mutex lock scope to prevent concurrent callers from all
+    /// fetching new tokens simultaneously (TOCTOU race).
     pub async fn get_token(&self) -> Result<String> {
-        // Check cache first - but only return if token is still valid
-        {
-            let cache = self.token_cache.read().await;
-            if let Some(cached) = cache.as_ref() {
-                if cached.is_valid() {
-                    return Ok(cached.token.clone());
-                }
-                // Token expired or about to expire, will fetch new one
-                tracing::debug!("Cached token expired, fetching new token");
+        let mut cache = self.token_cache.lock().await;
+
+        // Return cached token if still valid
+        if let Some(cached) = cache.as_ref() {
+            if cached.is_valid() {
+                return Ok(cached.token.clone());
             }
+            tracing::debug!("Cached token expired, fetching new token");
         }
 
-        // Fetch new token
+        // Fetch new token while still holding the lock
         let token = self
             .provider
             .token(DEFAULT_SCOPES)
@@ -78,19 +78,12 @@ impl GcpCredentials {
 
         let token_str = token.as_str().to_string();
 
-        // Calculate expiry time with buffer
-        // gcp_auth Token has expires_at() but it returns Option<DateTime>
-        // We'll use a conservative default TTL
         let expires_at = Instant::now() + DEFAULT_TOKEN_TTL - TOKEN_EXPIRY_BUFFER;
 
-        // Cache it with expiry
-        {
-            let mut cache = self.token_cache.write().await;
-            *cache = Some(CachedToken {
-                token: token_str.clone(),
-                expires_at,
-            });
-        }
+        *cache = Some(CachedToken {
+            token: token_str.clone(),
+            expires_at,
+        });
 
         tracing::debug!(
             "New token cached, expires in ~{} minutes",
@@ -102,13 +95,10 @@ impl GcpCredentials {
 
     /// Force refresh the token
     pub async fn refresh_token(&self) -> Result<String> {
-        // Clear cache
         {
-            let mut cache = self.token_cache.write().await;
+            let mut cache = self.token_cache.lock().await;
             *cache = None;
         }
-
-        // Get fresh token
         self.get_token().await
     }
 }
