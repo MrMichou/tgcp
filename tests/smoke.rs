@@ -263,10 +263,7 @@ mod resource_registry {
         let registry = load_all_resources();
         let color_maps = registry["color_maps"].as_object().unwrap();
 
-        assert!(
-            !color_maps.is_empty(),
-            "should have at least one color map"
-        );
+        assert!(!color_maps.is_empty(), "should have at least one color map");
 
         for (name, entries) in color_maps {
             let entries = entries
@@ -310,10 +307,7 @@ mod resource_registry {
                         .get("resource_key")
                         .and_then(|k| k.as_str())
                         .unwrap_or_else(|| {
-                            panic!(
-                                "resource '{}' sub_resource missing 'resource_key'",
-                                key
-                            )
+                            panic!("resource '{}' sub_resource missing 'resource_key'", key)
                         });
                     assert!(
                         resources.contains_key(sub_key),
@@ -344,10 +338,7 @@ mod resource_registry {
                         i
                     );
                     assert!(
-                        action
-                            .get("sdk_method")
-                            .and_then(|m| m.as_str())
-                            .is_some(),
+                        action.get("sdk_method").and_then(|m| m.as_str()).is_some(),
                         "resource '{}' action {} missing 'sdk_method'",
                         key,
                         i
@@ -363,7 +354,6 @@ mod resource_registry {
 // =========================================================================
 
 mod config_smoke {
-    use serde_json;
     use std::collections::HashMap;
 
     /// Minimal config struct matching the app's Config
@@ -436,8 +426,6 @@ mod config_smoke {
 // =========================================================================
 
 mod theme_smoke {
-    use serde_yaml;
-
     /// Minimal theme struct for validation
     #[derive(serde::Deserialize, Debug)]
     #[allow(dead_code)]
