@@ -104,4 +104,3 @@ pub fn render(f: &mut Frame, app: &App) {
     .alignment(Alignment::Center);
     f.render_widget(help, content_chunks[4]);
 }
-

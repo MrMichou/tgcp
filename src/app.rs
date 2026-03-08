@@ -756,7 +756,8 @@ impl App {
             },
             _ => {
                 if !self.filtered_indices.is_empty() {
-                    self.nav.selected = (self.nav.selected + 1).min(self.filtered_indices.len() - 1);
+                    self.nav.selected =
+                        (self.nav.selected + 1).min(self.filtered_indices.len() - 1);
                 }
             },
         }

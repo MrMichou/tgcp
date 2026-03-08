@@ -173,7 +173,8 @@ fn render_filter_bar(f: &mut Frame, app: &App, area: Rect) {
 fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme_manager.current().clone();
     let Some(resource) = app.current_resource() else {
-        let msg = Paragraph::new("Unknown resource").style(Style::default().fg(Theme::color(theme.base.error)));
+        let msg = Paragraph::new("Unknown resource")
+            .style(Style::default().fg(Theme::color(theme.base.error)));
         f.render_widget(msg, area);
         return;
     };
@@ -500,9 +501,7 @@ fn render_describe_view(f: &mut Frame, app: &App, area: Rect) {
         .border_style(Style::default().fg(accent))
         .title(Span::styled(
             title,
-            Style::default()
-                .fg(accent)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
         ));
 
     let inner_area = block.inner(area);

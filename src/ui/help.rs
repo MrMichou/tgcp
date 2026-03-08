@@ -207,4 +207,3 @@ pub fn render(f: &mut Frame, _app: &App) {
 
     f.render_widget(paragraph, popup_area);
 }
-

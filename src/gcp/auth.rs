@@ -94,7 +94,10 @@ impl GcpCredentials {
 
         tracing::debug!(
             "New token cached, expires in ~{} minutes",
-            expires_at.saturating_duration_since(Instant::now()).as_secs() / 60
+            expires_at
+                .saturating_duration_since(Instant::now())
+                .as_secs()
+                / 60
         );
 
         Ok(token_str)

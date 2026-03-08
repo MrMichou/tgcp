@@ -121,4 +121,3 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 
     f.render_stateful_widget(list, chunks[2], &mut list_state);
 }
-

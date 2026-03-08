@@ -147,4 +147,3 @@ fn render_warning_dialog(f: &mut Frame, app: &App) {
     let paragraph = Paragraph::new(content).alignment(Alignment::Center);
     f.render_widget(paragraph, inner);
 }
-

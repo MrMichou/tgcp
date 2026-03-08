@@ -33,7 +33,11 @@ pub async fn list_projects(client: &GcpClient) -> Result<Vec<Project>> {
 
     loop {
         let url = if let Some(ref token) = page_token {
-            format!("{}?pageToken={}", client.resourcemanager_url("projects"), token)
+            format!(
+                "{}?pageToken={}",
+                client.resourcemanager_url("projects"),
+                token
+            )
         } else {
             client.resourcemanager_url("projects")
         };
@@ -62,7 +66,7 @@ pub async fn list_projects(client: &GcpClient) -> Result<Vec<Project>> {
         match response.get("nextPageToken").and_then(|v| v.as_str()) {
             Some(token) if !token.is_empty() => {
                 page_token = Some(token.to_string());
-            }
+            },
             _ => break,
         }
     }
