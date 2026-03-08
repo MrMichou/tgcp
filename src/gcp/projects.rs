@@ -25,35 +25,56 @@ impl From<&Value> for Project {
 }
 
 /// List all accessible GCP projects (sorted alphabetically by project_id)
+///
+/// Paginates through all pages using `nextPageToken` to handle large organizations.
 pub async fn list_projects(client: &GcpClient) -> Result<Vec<Project>> {
-    let url = client.resourcemanager_url("projects");
-    let response = client.get(&url).await?;
+    let mut all_projects: Vec<Project> = Vec::new();
+    let mut page_token: Option<String> = None;
 
-    let mut projects: Vec<Project> = response
-        .get("projects")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter(|p| {
-                    // Only include active projects
-                    p.get("lifecycleState")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s == "ACTIVE")
-                        .unwrap_or(false)
-                })
-                .map(Project::from)
-                .collect()
-        })
-        .unwrap_or_default();
+    loop {
+        let url = if let Some(ref token) = page_token {
+            format!("{}?pageToken={}", client.resourcemanager_url("projects"), token)
+        } else {
+            client.resourcemanager_url("projects")
+        };
+
+        let response = client.get(&url).await?;
+
+        let page_projects: Vec<Project> = response
+            .get("projects")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter(|p| {
+                        p.get("lifecycleState")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s == "ACTIVE")
+                            .unwrap_or(false)
+                    })
+                    .map(Project::from)
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        all_projects.extend(page_projects);
+
+        // Check for next page
+        match response.get("nextPageToken").and_then(|v| v.as_str()) {
+            Some(token) if !token.is_empty() => {
+                page_token = Some(token.to_string());
+            }
+            _ => break,
+        }
+    }
 
     // Sort alphabetically by project_id
-    projects.sort_by(|a, b| {
+    all_projects.sort_by(|a, b| {
         a.project_id
             .to_lowercase()
             .cmp(&b.project_id.to_lowercase())
     });
 
-    Ok(projects)
+    Ok(all_projects)
 }
 
 /// Get project IDs as a simple list

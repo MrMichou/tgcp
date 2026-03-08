@@ -329,7 +329,7 @@ pub struct App {
 
     // Dynamic data storage (JSON)
     pub items: Vec<Value>,
-    pub filtered_items: Vec<Value>,
+    pub filtered_indices: Vec<usize>,
 
     // Application mode
     pub mode: Mode,
@@ -387,6 +387,9 @@ pub struct App {
 
     // Column configuration state
     pub column_config_state: Option<ColumnConfigState>,
+
+    // Cached command list (rebuilt only when aliases change)
+    cached_commands: Option<Vec<String>>,
 }
 
 impl App {
@@ -402,7 +405,7 @@ impl App {
         config: Config,
         readonly: bool,
     ) -> Self {
-        let filtered_items = initial_items.clone();
+        let filtered_indices: Vec<usize> = (0..initial_items.len()).collect();
 
         // Initialize theme manager and apply project-specific theme
         let mut theme_manager = ThemeManager::load();
@@ -438,7 +441,7 @@ impl App {
             client,
             current_resource_key: "compute-instances".to_string(),
             items: initial_items,
-            filtered_items,
+            filtered_indices,
             mode: Mode::Normal,
             nav: NavigationState::new(),
             selection: SelectionState::default(),
@@ -469,6 +472,7 @@ impl App {
             notifications_selected: 0,
             metrics_history: MetricsHistory::default(),
             column_config_state: None,
+            cached_commands: None,
         }
     }
 
@@ -497,7 +501,11 @@ impl App {
         get_resource(&self.current_resource_key)
     }
 
-    pub fn get_available_commands(&self) -> Vec<String> {
+    pub fn get_available_commands(&mut self) -> Vec<String> {
+        if let Some(ref cached) = self.cached_commands {
+            return cached.clone();
+        }
+
         let mut commands: Vec<String> = get_all_resource_keys()
             .iter()
             .map(|s| s.to_string())
@@ -523,7 +531,13 @@ impl App {
         }
 
         commands.sort();
+        self.cached_commands = Some(commands.clone());
         commands
+    }
+
+    /// Invalidate the cached commands list (call after alias changes)
+    pub fn invalidate_command_cache(&mut self) {
+        self.cached_commands = None;
     }
 
     // =========================================================================
@@ -575,7 +589,7 @@ impl App {
                 self.pagination.has_more = result.next_token.is_some();
                 self.pagination.next_token = result.next_token;
 
-                if prev_selected < self.filtered_items.len() {
+                if prev_selected < self.filtered_indices.len() {
                     self.nav.selected = prev_selected;
                 } else {
                     self.nav.selected = 0;
@@ -584,7 +598,7 @@ impl App {
             Err(e) => {
                 self.error_message = Some(crate::gcp::client::format_gcp_error(&e));
                 self.items.clear();
-                self.filtered_items.clear();
+                self.filtered_indices.clear();
                 self.nav.selected = 0;
                 self.pagination = PaginationState::default();
             },
@@ -646,24 +660,19 @@ impl App {
     // Filtering
     // =========================================================================
 
-    // TODO: Performance optimization opportunity
-    // Currently clones all items into filtered_items. For large datasets, consider:
-    // 1. Using Vec<usize> indices instead of cloning items
-    // 2. Using Cow<[Value]> for copy-on-write semantics
-    // This would require updating all 40+ usages of filtered_items
     pub fn apply_filter(&mut self) {
         let filter = self.filter_sort.filter_text.to_lowercase();
 
         if filter.is_empty() {
-            self.filtered_items = self.items.clone();
+            self.filtered_indices = (0..self.items.len()).collect();
         } else {
             let resource = self.current_resource();
-            self.filtered_items = self
+            self.filtered_indices = self
                 .items
                 .iter()
-                .filter(|item| {
+                .enumerate()
+                .filter(|(_, item)| {
                     if let Some(res) = resource {
-                        // Search ALL columns, not just name/id
                         res.columns.iter().any(|col| {
                             let value = extract_json_value(item, &col.json_path).to_lowercase();
                             value.contains(&filter)
@@ -672,12 +681,12 @@ impl App {
                         item.to_string().to_lowercase().contains(&filter)
                     }
                 })
-                .cloned()
+                .map(|(i, _)| i)
                 .collect();
         }
 
-        if self.nav.selected >= self.filtered_items.len() && !self.filtered_items.is_empty() {
-            self.nav.selected = self.filtered_items.len() - 1;
+        if self.nav.selected >= self.filtered_indices.len() && !self.filtered_indices.is_empty() {
+            self.nav.selected = self.filtered_indices.len() - 1;
         }
 
         // Clear selection when filter changes (indices become invalid)
@@ -700,7 +709,16 @@ impl App {
     // =========================================================================
 
     pub fn selected_item(&self) -> Option<&Value> {
-        self.filtered_items.get(self.nav.selected)
+        self.filtered_indices
+            .get(self.nav.selected)
+            .and_then(|&i| self.items.get(i))
+    }
+
+    /// Get a filtered item by its position in the filtered list
+    pub fn filtered_item(&self, idx: usize) -> Option<&Value> {
+        self.filtered_indices
+            .get(idx)
+            .and_then(|&i| self.items.get(i))
     }
 
     pub fn selected_item_json(&self) -> Option<String> {
@@ -737,8 +755,8 @@ impl App {
                 }
             },
             _ => {
-                if !self.filtered_items.is_empty() {
-                    self.nav.selected = (self.nav.selected + 1).min(self.filtered_items.len() - 1);
+                if !self.filtered_indices.is_empty() {
+                    self.nav.selected = (self.nav.selected + 1).min(self.filtered_indices.len() - 1);
                 }
             },
         }
@@ -779,8 +797,8 @@ impl App {
                 }
             },
             _ => {
-                if !self.filtered_items.is_empty() {
-                    self.nav.selected = self.filtered_items.len() - 1;
+                if !self.filtered_indices.is_empty() {
+                    self.nav.selected = self.filtered_indices.len() - 1;
                 }
             },
         }
@@ -801,9 +819,9 @@ impl App {
                 }
             },
             _ => {
-                if !self.filtered_items.is_empty() {
+                if !self.filtered_indices.is_empty() {
                     self.nav.selected =
-                        (self.nav.selected + page_size).min(self.filtered_items.len() - 1);
+                        (self.nav.selected + page_size).min(self.filtered_indices.len() - 1);
                 }
             },
         }
@@ -875,7 +893,7 @@ impl App {
     }
 
     pub async fn enter_describe_mode(&mut self) {
-        if self.filtered_items.is_empty() {
+        if self.filtered_indices.is_empty() {
             return;
         }
 
@@ -1159,10 +1177,11 @@ impl App {
 
         let json_path = column.json_path.clone();
         let ascending = self.filter_sort.sort_ascending;
+        let items = &self.items;
 
-        self.filtered_items.sort_by(|a, b| {
-            let val_a = extract_json_value(a, &json_path);
-            let val_b = extract_json_value(b, &json_path);
+        self.filtered_indices.sort_by(|&a, &b| {
+            let val_a = extract_json_value(&items[a], &json_path);
+            let val_b = extract_json_value(&items[b], &json_path);
 
             // Try numeric comparison first
             let cmp = match (val_a.parse::<f64>(), val_b.parse::<f64>()) {
@@ -1413,6 +1432,8 @@ impl App {
                 if get_resource(resource_key).is_some() {
                     if let Err(e) = self.config.add_alias(alias, resource_key) {
                         self.error_message = Some(format!("Failed to save alias: {}", e));
+                    } else {
+                        self.invalidate_command_cache();
                     }
                 } else {
                     self.error_message = Some(format!("Unknown resource: {}", resource_key));
@@ -1460,7 +1481,7 @@ impl App {
 
     /// Ensure the selected item is visible in the viewport
     pub fn ensure_visible(&mut self) {
-        if self.filtered_items.is_empty() {
+        if self.filtered_indices.is_empty() {
             self.nav.scroll_offset = 0;
             return;
         }
@@ -1486,7 +1507,7 @@ impl App {
 
         // Clamp scroll offset to valid range
         let max_offset = self
-            .filtered_items
+            .filtered_indices
             .len()
             .saturating_sub(self.nav.viewport_height);
         self.nav.scroll_offset = self.nav.scroll_offset.min(max_offset);
@@ -1496,7 +1517,7 @@ impl App {
     pub fn visible_range(&self) -> Range<usize> {
         let start = self.nav.scroll_offset;
         let end =
-            (self.nav.scroll_offset + self.nav.viewport_height).min(self.filtered_items.len());
+            (self.nav.scroll_offset + self.nav.viewport_height).min(self.filtered_indices.len());
         start..end
     }
 
@@ -1506,7 +1527,7 @@ impl App {
 
     /// Toggle selection of the current item
     pub fn toggle_selection(&mut self) {
-        if self.filtered_items.is_empty() {
+        if self.filtered_indices.is_empty() {
             return;
         }
         self.selection.toggle(self.nav.selected);
@@ -1514,7 +1535,7 @@ impl App {
 
     /// Select all filtered items
     pub fn select_all(&mut self) {
-        self.selection.select_all(self.filtered_items.len());
+        self.selection.select_all(self.filtered_indices.len());
     }
 
     /// Clear all selections
@@ -1533,7 +1554,7 @@ impl App {
         self.selection
             .indices
             .iter()
-            .filter_map(|&idx| self.filtered_items.get(idx))
+            .filter_map(|&idx| self.filtered_item(idx))
             .collect()
     }
 
@@ -1547,7 +1568,7 @@ impl App {
             .indices
             .iter()
             .filter_map(|&idx| {
-                self.filtered_items.get(idx).map(|item| {
+                self.filtered_item(idx).map(|item| {
                     let id = extract_json_value(item, &resource.name_field);
                     if id != "-" && !id.is_empty() {
                         id
@@ -1566,7 +1587,7 @@ impl App {
 
     /// Extend selection from current position (for Shift+j/k)
     pub fn extend_selection_down(&mut self) {
-        if self.filtered_items.is_empty() {
+        if self.filtered_indices.is_empty() {
             return;
         }
 
@@ -1574,7 +1595,7 @@ impl App {
         self.selection.indices.insert(self.nav.selected);
 
         // Move down and select
-        if self.nav.selected < self.filtered_items.len() - 1 {
+        if self.nav.selected < self.filtered_indices.len() - 1 {
             self.nav.selected += 1;
             self.selection.indices.insert(self.nav.selected);
         }
@@ -1582,7 +1603,7 @@ impl App {
 
     /// Extend selection upward (for Shift+k)
     pub fn extend_selection_up(&mut self) {
-        if self.filtered_items.is_empty() {
+        if self.filtered_indices.is_empty() {
             return;
         }
 

@@ -78,7 +78,14 @@ impl GcpCredentials {
 
         let token_str = token.as_str().to_string();
 
-        let expires_at = Instant::now() + DEFAULT_TOKEN_TTL - TOKEN_EXPIRY_BUFFER;
+        let expires_at = {
+            let token_expiry = token.expires_at();
+            let now_utc = chrono::Utc::now();
+            let remaining = (token_expiry - now_utc)
+                .to_std()
+                .unwrap_or(DEFAULT_TOKEN_TTL);
+            Instant::now() + remaining - TOKEN_EXPIRY_BUFFER
+        };
 
         *cache = Some(CachedToken {
             token: token_str.clone(),
@@ -87,7 +94,7 @@ impl GcpCredentials {
 
         tracing::debug!(
             "New token cached, expires in ~{} minutes",
-            (DEFAULT_TOKEN_TTL - TOKEN_EXPIRY_BUFFER).as_secs() / 60
+            expires_at.saturating_duration_since(Instant::now()).as_secs() / 60
         );
 
         Ok(token_str)
