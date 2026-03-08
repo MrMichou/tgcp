@@ -143,7 +143,7 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         // Quick jump to position 1-9
         KeyCode::Char(c @ '1'..='9') if !app.filter_sort.filter_active => {
             let idx = c.to_digit(10).unwrap() as usize - 1;
-            if idx < app.filtered_items.len() {
+            if idx < app.filtered_indices.len() {
                 app.nav.selected = idx;
             }
         },

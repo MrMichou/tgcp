@@ -613,7 +613,21 @@ pub struct ThemeManager {
     current: Theme,
 }
 
+impl Theme {
+    /// Convert an RGB tuple to a ratatui Color
+    pub fn color(rgb: Rgb) -> Color {
+        Color::Rgb(rgb[0], rgb[1], rgb[2])
+    }
+}
+
+use ratatui::style::Color;
+
 impl ThemeManager {
+    /// Get the current theme
+    pub fn current(&self) -> &Theme {
+        &self.current
+    }
+
     /// Create new theme manager with default theme
     pub fn new() -> Self {
         Self {

@@ -79,10 +79,10 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
             Span::raw("  "),
             Span::styled("Count: ", Style::default().fg(Color::DarkGray)),
             Span::styled(
-                format!("{}", app.filtered_items.len()),
+                format!("{}", app.filtered_indices.len()),
                 Style::default().fg(Color::White),
             ),
-            if app.items.len() != app.filtered_items.len() {
+            if app.items.len() != app.filtered_indices.len() {
                 Span::styled(
                     format!(" (filtered from {})", app.items.len()),
                     Style::default().fg(Color::DarkGray),

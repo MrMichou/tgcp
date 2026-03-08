@@ -42,6 +42,7 @@ mod zones;
 
 use crate::app::{App, Mode};
 use crate::resource::{extract_json_value, get_color_for_value, ColumnDef};
+use crate::theme::Theme;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -53,6 +54,26 @@ use ratatui::{
     },
     Frame,
 };
+
+pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
+}
 
 pub fn render(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
@@ -128,12 +149,13 @@ fn render_main_content(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn render_filter_bar(f: &mut Frame, app: &App, area: Rect) {
+    let theme = app.theme_manager.current();
     let cursor_style = if app.filter_sort.filter_active {
         Style::default()
-            .fg(Color::Yellow)
+            .fg(Theme::color(theme.base.warning))
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(Theme::color(theme.base.muted))
     };
 
     let filter_display = if app.filter_sort.filter_active {
@@ -149,15 +171,17 @@ fn render_filter_bar(f: &mut Frame, app: &App, area: Rect) {
 /// Render dynamic table based on current resource definition
 /// Uses virtual scrolling for performance with large datasets
 fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
+    let theme = app.theme_manager.current().clone();
     let Some(resource) = app.current_resource() else {
-        let msg = Paragraph::new("Unknown resource").style(Style::default().fg(Color::Red));
+        let msg = Paragraph::new("Unknown resource")
+            .style(Style::default().fg(Theme::color(theme.base.error)));
         f.render_widget(msg, area);
         return;
     };
 
     // Build title with count, zone info, selection, and pagination
     let title = {
-        let count = app.filtered_items.len();
+        let count = app.filtered_indices.len();
         let total = app.items.len();
         let is_global = resource.is_global;
         let selection_count = app.selection_count();
@@ -211,7 +235,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
     let border_color = if app.selection.visual_mode {
         Color::Magenta
     } else {
-        Color::DarkGray
+        Theme::color(theme.base.border)
     };
 
     let block = Block::default()
@@ -220,7 +244,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
         .title(Span::styled(
             title,
             Style::default()
-                .fg(Color::Cyan)
+                .fg(Theme::color(theme.base.accent))
                 .add_modifier(Modifier::BOLD),
         ))
         .title_alignment(Alignment::Center);
@@ -233,7 +257,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
     app.update_viewport(visible_height);
     app.ensure_visible();
 
-    let total_items = app.filtered_items.len();
+    let total_items = app.filtered_indices.len();
     let needs_scrollbar = total_items > visible_height;
 
     // Adjust table area for scrollbar if needed
@@ -263,11 +287,12 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
     // Build header from column definitions with selection column and sort indicators
     let has_selection = app.selection_count() > 0 || app.selection.visual_mode;
 
+    let header_color = Theme::color(theme.table.header);
     let header_cells: Vec<Cell> = if has_selection {
         // Add selection column header
         let mut cells = vec![Cell::from(" ").style(
             Style::default()
-                .fg(Color::Yellow)
+                .fg(header_color)
                 .add_modifier(Modifier::BOLD),
         )];
         cells.extend(visible_columns.iter().map(|(orig_idx, col)| {
@@ -289,7 +314,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
 
             Cell::from(header_text).style(
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(header_color)
                     .add_modifier(Modifier::BOLD),
             )
         }));
@@ -316,7 +341,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
 
                 Cell::from(header_text).style(
                     Style::default()
-                        .fg(Color::Yellow)
+                        .fg(header_color)
                         .add_modifier(Modifier::BOLD),
                 )
             })
@@ -326,10 +351,11 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
     let header = Row::new(header_cells).height(1);
 
     // Build only visible rows (virtual scrolling)
-    let rows: Vec<Row> = app.filtered_items[range.clone()]
+    let rows: Vec<Row> = app.filtered_indices[range.clone()]
         .iter()
         .enumerate()
-        .map(|(rel_idx, item)| {
+        .map(|(rel_idx, &item_idx)| {
+            let item = &app.items[item_idx];
             let abs_idx = range.start + rel_idx;
             let is_selected = app.is_selected(abs_idx);
 
@@ -386,8 +412,8 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
 
     let table = Table::new(rows, widths).header(header).row_highlight_style(
         Style::default()
-            .bg(Color::DarkGray)
-            .fg(Color::White)
+            .bg(Theme::color(theme.table.selected_bg))
+            .fg(Theme::color(theme.table.selected_fg))
             .add_modifier(Modifier::BOLD),
     );
 
@@ -455,13 +481,13 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 }
 
 fn render_describe_view(f: &mut Frame, app: &App, area: Rect) {
+    let theme = app.theme_manager.current().clone();
     let json = app
         .selected_item_json()
         .unwrap_or_else(|| "No item selected".to_string());
 
-    // Apply JSON syntax highlighting
-    let lines: Vec<Line> = json.lines().map(highlight_json_line).collect();
-    let total_lines = lines.len();
+    let all_lines: Vec<&str> = json.lines().collect();
+    let total_lines = all_lines.len();
 
     let title = if let Some(resource) = app.current_resource() {
         format!(" {} Details ", resource.display_name)
@@ -469,14 +495,13 @@ fn render_describe_view(f: &mut Frame, app: &App, area: Rect) {
         " Details ".to_string()
     };
 
+    let accent = Theme::color(theme.base.accent);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan))
+        .border_style(Style::default().fg(accent))
         .title(Span::styled(
             title,
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
         ));
 
     let inner_area = block.inner(area);
@@ -488,7 +513,14 @@ fn render_describe_view(f: &mut Frame, app: &App, area: Rect) {
     let max_scroll = total_lines.saturating_sub(visible_lines);
     let scroll = app.describe.scroll.min(max_scroll);
 
-    let paragraph = Paragraph::new(lines.clone()).scroll((scroll as u16, 0));
+    // Only highlight visible lines for performance
+    let visible_end = (scroll + visible_lines).min(total_lines);
+    let highlighted: Vec<Line> = all_lines[scroll..visible_end]
+        .iter()
+        .map(|line| highlight_json_line(line, &theme.syntax))
+        .collect();
+
+    let paragraph = Paragraph::new(highlighted);
 
     f.render_widget(paragraph, inner_area);
 
@@ -503,11 +535,31 @@ fn render_describe_view(f: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Apply JSON syntax highlighting to a single line
-fn highlight_json_line(line: &str) -> Line<'static> {
+fn highlight_json_line(line: &str, syntax: &crate::theme::SyntaxColors) -> Line<'static> {
+    let key_color = Theme::color(syntax.key);
+    let string_color = Theme::color(syntax.string);
+    let bracket_color = Theme::color(syntax.bracket);
+    let number_color = Theme::color(syntax.number);
+    let boolean_color = Theme::color(syntax.boolean);
+    let null_color = Theme::color(syntax.null);
+
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut chars = line.chars().peekable();
     let mut current = String::new();
     let mut is_key = true;
+
+    let value_style = |value: &str| -> Style {
+        let trimmed = value.trim();
+        if trimmed == "null" {
+            Style::default().fg(null_color)
+        } else if trimmed == "true" || trimmed == "false" {
+            Style::default().fg(boolean_color)
+        } else if trimmed.parse::<f64>().is_ok() {
+            Style::default().fg(number_color)
+        } else {
+            Style::default().fg(Color::White)
+        }
+    };
 
     while let Some(c) = chars.next() {
         match c {
@@ -533,9 +585,9 @@ fn highlight_json_line(line: &str) -> Line<'static> {
                 }
 
                 let style = if is_key {
-                    Style::default().fg(Color::Cyan)
+                    Style::default().fg(key_color)
                 } else {
-                    Style::default().fg(Color::Green)
+                    Style::default().fg(string_color)
                 };
                 spans.push(Span::styled(string_content, style));
             },
@@ -550,7 +602,7 @@ fn highlight_json_line(line: &str) -> Line<'static> {
             },
             ',' => {
                 if !current.is_empty() {
-                    let style = get_json_value_style(&current);
+                    let style = value_style(&current);
                     spans.push(Span::styled(current.clone(), style));
                     current.clear();
                 }
@@ -562,13 +614,13 @@ fn highlight_json_line(line: &str) -> Line<'static> {
             },
             '{' | '}' | '[' | ']' => {
                 if !current.is_empty() {
-                    let style = get_json_value_style(&current);
+                    let style = value_style(&current);
                     spans.push(Span::styled(current.clone(), style));
                     current.clear();
                 }
                 spans.push(Span::styled(
                     c.to_string(),
-                    Style::default().fg(Color::Yellow),
+                    Style::default().fg(bracket_color),
                 ));
                 if c == '{' || c == '[' {
                     is_key = c == '{';
@@ -576,7 +628,7 @@ fn highlight_json_line(line: &str) -> Line<'static> {
             },
             ' ' | '\t' => {
                 if !current.is_empty() {
-                    let style = get_json_value_style(&current);
+                    let style = value_style(&current);
                     spans.push(Span::styled(current.clone(), style));
                     current.clear();
                 }
@@ -589,25 +641,11 @@ fn highlight_json_line(line: &str) -> Line<'static> {
     }
 
     if !current.is_empty() {
-        let style = get_json_value_style(&current);
+        let style = value_style(&current);
         spans.push(Span::styled(current, style));
     }
 
     Line::from(spans)
-}
-
-/// Get style for JSON values (numbers, booleans, null)
-fn get_json_value_style(value: &str) -> Style {
-    let trimmed = value.trim();
-    if trimmed == "null" {
-        Style::default().fg(Color::DarkGray)
-    } else if trimmed == "true" || trimmed == "false" {
-        Style::default().fg(Color::Magenta)
-    } else if trimmed.parse::<f64>().is_ok() {
-        Style::default().fg(Color::LightBlue)
-    } else {
-        Style::default().fg(Color::White)
-    }
 }
 
 fn render_crumb(f: &mut Frame, app: &App, area: Rect) {
