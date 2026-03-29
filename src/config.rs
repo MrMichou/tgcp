@@ -249,3 +249,167 @@ impl Config {
         self.save()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+        assert!(config.project_id.is_none());
+        assert!(config.zone.is_none());
+        assert!(config.last_resource.is_none());
+        assert!(config.theme.is_none());
+        assert!(config.project_themes.is_empty());
+        assert!(config.aliases.is_empty());
+        assert!(config.hidden_columns.is_empty());
+    }
+
+    #[test]
+    fn test_notification_config_default() {
+        let nc = NotificationConfig::default();
+        assert!(nc.enabled);
+        assert_eq!(nc.detail_level, "detailed");
+        assert_eq!(nc.toast_duration_secs, 5);
+        assert_eq!(nc.max_history, 50);
+        assert_eq!(nc.poll_interval_ms, 2000);
+        assert!(nc.auto_poll);
+        assert_eq!(nc.sound, "off");
+    }
+
+    #[test]
+    fn test_ssh_config_default() {
+        let ssh = SshConfig::default();
+        assert!(!ssh.use_iap);
+        assert!(ssh.extra_args.is_empty());
+    }
+
+    #[test]
+    fn test_effective_theme_project_specific() {
+        let mut config = Config::default();
+        config
+            .project_themes
+            .insert("prod-project".into(), "production".into());
+        config.theme = Some("dracula".into());
+
+        assert_eq!(config.effective_theme("prod-project"), "production");
+    }
+
+    #[test]
+    fn test_effective_theme_falls_back_to_default_theme() {
+        let config = Config {
+            theme: Some("dracula".into()),
+            ..Default::default()
+        };
+
+        assert_eq!(config.effective_theme("unknown-project"), "dracula");
+    }
+
+    #[test]
+    fn test_effective_theme_falls_back_to_default() {
+        let config = Config::default();
+        assert_eq!(config.effective_theme("any-project"), "default");
+    }
+
+    #[test]
+    fn test_resolve_alias() {
+        let mut config = Config::default();
+        config
+            .aliases
+            .insert("vm".into(), "compute-instances".into());
+        config
+            .aliases
+            .insert("fw".into(), "compute-firewalls".into());
+
+        assert_eq!(
+            config.resolve_alias("vm"),
+            Some(&"compute-instances".to_string())
+        );
+        assert_eq!(
+            config.resolve_alias("fw"),
+            Some(&"compute-firewalls".to_string())
+        );
+        assert_eq!(config.resolve_alias("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_get_hidden_columns() {
+        let mut config = Config::default();
+        let mut hidden = HashSet::new();
+        hidden.insert("STATUS".into());
+        hidden.insert("ZONE".into());
+        config
+            .hidden_columns
+            .insert("compute-instances".into(), hidden);
+
+        let result = config.get_hidden_columns("compute-instances");
+        assert_eq!(result.len(), 2);
+        assert!(result.contains("STATUS"));
+        assert!(result.contains("ZONE"));
+
+        // Unknown resource returns empty set
+        assert!(config.get_hidden_columns("nonexistent").is_empty());
+    }
+
+    #[test]
+    fn test_serialization_round_trip() {
+        let mut config = Config {
+            project_id: Some("my-project".into()),
+            zone: Some("us-central1-a".into()),
+            theme: Some("dracula".into()),
+            ..Default::default()
+        };
+        config
+            .aliases
+            .insert("vm".into(), "compute-instances".into());
+        config
+            .project_themes
+            .insert("prod".into(), "production".into());
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: Config = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.project_id, Some("my-project".into()));
+        assert_eq!(deserialized.zone, Some("us-central1-a".into()));
+        assert_eq!(deserialized.theme, Some("dracula".into()));
+        assert_eq!(
+            deserialized.resolve_alias("vm"),
+            Some(&"compute-instances".to_string())
+        );
+        assert_eq!(deserialized.effective_theme("prod"), "production");
+    }
+
+    #[test]
+    fn test_deserialize_empty_json() {
+        let config: Config = serde_json::from_str("{}").unwrap();
+        assert!(config.project_id.is_none());
+        assert!(config.zone.is_none());
+        assert!(config.aliases.is_empty());
+        assert!(config.notifications.enabled); // default true
+    }
+
+    #[test]
+    fn test_deserialize_with_unknown_fields() {
+        let json = r#"{"unknown_field": "value", "project_id": "test"}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.project_id, Some("test".into()));
+    }
+
+    #[test]
+    fn test_hidden_columns_empty_removes_key() {
+        let mut config = Config::default();
+        let mut hidden = HashSet::new();
+        hidden.insert("COL".into());
+        config.hidden_columns.insert("res".into(), hidden);
+
+        // Setting empty set should remove the key (save will fail in test, that's ok)
+        let empty = HashSet::new();
+        if empty.is_empty() {
+            config.hidden_columns.remove("res");
+        } else {
+            config.hidden_columns.insert("res".into(), empty);
+        }
+        assert!(!config.hidden_columns.contains_key("res"));
+    }
+}

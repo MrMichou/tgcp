@@ -389,4 +389,102 @@ mod tests {
         assert!(!zones.is_empty());
         assert!(zones.contains(&"us-central1-a".to_string()));
     }
+
+    // =========================================================================
+    // validate_project_id tests
+    // =========================================================================
+
+    #[test]
+    fn test_valid_project_ids() {
+        assert!(validate_project_id("my-project-123"));
+        assert!(validate_project_id("abcdef")); // min 6 chars
+        assert!(validate_project_id(&"a".repeat(30))); // max 30 chars
+        assert!(validate_project_id("project-1"));
+        assert!(validate_project_id("a12345"));
+    }
+
+    #[test]
+    fn test_project_id_too_short() {
+        assert!(!validate_project_id("short")); // 5 chars
+        assert!(!validate_project_id("ab"));
+        assert!(!validate_project_id(""));
+    }
+
+    #[test]
+    fn test_project_id_too_long() {
+        assert!(!validate_project_id(&"a".repeat(31)));
+    }
+
+    #[test]
+    fn test_project_id_must_start_with_letter() {
+        assert!(!validate_project_id("1starts-with-digit"));
+        assert!(!validate_project_id("-starts-with-hyphen"));
+    }
+
+    #[test]
+    fn test_project_id_no_uppercase() {
+        assert!(!validate_project_id("UPPERCASE-PROJECT"));
+        assert!(!validate_project_id("Mixed-Case"));
+    }
+
+    #[test]
+    fn test_project_id_no_end_hyphen() {
+        assert!(!validate_project_id("ends-with-"));
+    }
+
+    #[test]
+    fn test_project_id_no_special_chars() {
+        assert!(!validate_project_id("has space here"));
+        assert!(!validate_project_id("has_underscore"));
+        assert!(!validate_project_id("has.dot.here"));
+    }
+
+    // =========================================================================
+    // validate_zone_name tests
+    // =========================================================================
+
+    #[test]
+    fn test_valid_zone_names() {
+        assert!(validate_zone_name("us-central1-a"));
+        assert!(validate_zone_name("europe-west1-b"));
+        assert!(validate_zone_name("asia-east1-c"));
+        assert!(validate_zone_name(&"a".repeat(63))); // max 63 chars
+    }
+
+    #[test]
+    fn test_zone_name_empty() {
+        assert!(!validate_zone_name(""));
+    }
+
+    #[test]
+    fn test_zone_name_too_long() {
+        assert!(!validate_zone_name(&"a".repeat(64)));
+    }
+
+    #[test]
+    fn test_zone_name_no_uppercase() {
+        assert!(!validate_zone_name("US-CENTRAL1-A"));
+    }
+
+    #[test]
+    fn test_zone_name_no_special_chars() {
+        assert!(!validate_zone_name("zone with space"));
+        assert!(!validate_zone_name("zone_underscore"));
+        assert!(!validate_zone_name("zone.dot"));
+    }
+
+    // =========================================================================
+    // get_gcloud_config_dir tests
+    // =========================================================================
+
+    #[test]
+    fn test_gcloud_config_dir_returns_some() {
+        // In most environments, config_dir() returns Some
+        let result = get_gcloud_config_dir();
+        // We can't guarantee this is Some in all CI environments,
+        // but we can at least verify it doesn't panic
+        if let Some(path) = result {
+            assert!(path.to_string_lossy().contains("gcloud"));
+        }
+    }
 }

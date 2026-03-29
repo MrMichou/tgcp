@@ -285,3 +285,198 @@ pub fn format_gcp_error(error: &anyhow::Error) -> String {
         sanitized
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_retryable_429() {
+        assert!(is_retryable_status(StatusCode::TOO_MANY_REQUESTS));
+    }
+
+    #[test]
+    fn test_retryable_502() {
+        assert!(is_retryable_status(StatusCode::BAD_GATEWAY));
+    }
+
+    #[test]
+    fn test_retryable_503() {
+        assert!(is_retryable_status(StatusCode::SERVICE_UNAVAILABLE));
+    }
+
+    #[test]
+    fn test_retryable_504() {
+        assert!(is_retryable_status(StatusCode::GATEWAY_TIMEOUT));
+    }
+
+    #[test]
+    fn test_not_retryable_200() {
+        assert!(!is_retryable_status(StatusCode::OK));
+    }
+
+    #[test]
+    fn test_not_retryable_400() {
+        assert!(!is_retryable_status(StatusCode::BAD_REQUEST));
+    }
+
+    #[test]
+    fn test_not_retryable_401() {
+        assert!(!is_retryable_status(StatusCode::UNAUTHORIZED));
+    }
+
+    #[test]
+    fn test_not_retryable_403() {
+        assert!(!is_retryable_status(StatusCode::FORBIDDEN));
+    }
+
+    #[test]
+    fn test_not_retryable_404() {
+        assert!(!is_retryable_status(StatusCode::NOT_FOUND));
+    }
+
+    #[test]
+    fn test_not_retryable_500() {
+        assert!(!is_retryable_status(StatusCode::INTERNAL_SERVER_ERROR));
+    }
+
+    #[test]
+    fn test_backoff_attempt_0() {
+        let delay = calculate_backoff_delay(0);
+        assert!(delay >= Duration::from_millis(500));
+        assert!(delay <= Duration::from_millis(750));
+    }
+
+    #[test]
+    fn test_backoff_attempt_1() {
+        let delay = calculate_backoff_delay(1);
+        assert!(delay >= Duration::from_millis(1000));
+        assert!(delay <= Duration::from_millis(1500));
+    }
+
+    #[test]
+    fn test_backoff_attempt_2() {
+        let delay = calculate_backoff_delay(2);
+        assert!(delay >= Duration::from_millis(2000));
+        assert!(delay <= Duration::from_millis(3000));
+    }
+
+    #[test]
+    fn test_backoff_capped_at_max() {
+        let delay = calculate_backoff_delay(10);
+        assert!(delay >= Duration::from_millis(10_000));
+        assert!(delay <= Duration::from_millis(15_000));
+    }
+
+    #[test]
+    fn test_rand_jitter_range() {
+        for _ in 0..100 {
+            let j = rand_jitter();
+            assert!(j >= 0.0, "jitter should be >= 0.0, got {}", j);
+            assert!(j < 0.5, "jitter should be < 0.5, got {}", j);
+        }
+    }
+
+    #[test]
+    fn test_sanitize_short_string() {
+        let result = sanitize_for_log("hello world");
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_sanitize_long_string_truncated() {
+        let long = "a".repeat(300);
+        let result = sanitize_for_log(&long);
+        assert!(result.contains("truncated"));
+        assert!(result.contains("300 bytes total"));
+    }
+
+    #[test]
+    fn test_sanitize_removes_non_ascii() {
+        let result = sanitize_for_log("hello\x00world\x01test");
+        assert_eq!(result, "helloworldtest");
+    }
+
+    #[test]
+    fn test_sanitize_preserves_spaces() {
+        let result = sanitize_for_log("hello world");
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_sanitize_multibyte_boundary() {
+        let mut s = "a".repeat(199);
+        s.push('é');
+        let result = sanitize_for_log(&s);
+        assert!(result.contains("truncated"));
+    }
+
+    #[test]
+    fn test_format_error_403() {
+        let err = anyhow::anyhow!("API request failed: 403");
+        assert_eq!(
+            format_gcp_error(&err),
+            "Permission denied. Check your GCP IAM permissions."
+        );
+    }
+
+    #[test]
+    fn test_format_error_401() {
+        let err = anyhow::anyhow!("API request failed: 401");
+        assert_eq!(
+            format_gcp_error(&err),
+            "Authentication failed. Run 'gcloud auth application-default login'."
+        );
+    }
+
+    #[test]
+    fn test_format_error_404() {
+        let err = anyhow::anyhow!("API request failed: 404");
+        assert_eq!(format_gcp_error(&err), "Resource not found.");
+    }
+
+    #[test]
+    fn test_format_error_429() {
+        let err = anyhow::anyhow!("API request failed: 429");
+        assert_eq!(
+            format_gcp_error(&err),
+            "Rate limit exceeded. Please try again later."
+        );
+    }
+
+    #[test]
+    fn test_format_error_400() {
+        let err = anyhow::anyhow!("API request failed: 400");
+        assert_eq!(
+            format_gcp_error(&err),
+            "Invalid request. Check your parameters."
+        );
+    }
+
+    #[test]
+    fn test_format_error_500() {
+        let err = anyhow::anyhow!("API request failed: 500");
+        assert_eq!(
+            format_gcp_error(&err),
+            "GCP service temporarily unavailable. Please try again."
+        );
+    }
+
+    #[test]
+    fn test_format_error_409() {
+        let err = anyhow::anyhow!("API request failed: 409");
+        assert_eq!(
+            format_gcp_error(&err),
+            "Resource conflict. The resource may already exist or be in use."
+        );
+    }
+
+    #[test]
+    fn test_format_error_generic_api() {
+        let err = anyhow::anyhow!("API request failed");
+        assert_eq!(
+            format_gcp_error(&err),
+            "Request failed. Check your network connection and try again."
+        );
+    }
+}
