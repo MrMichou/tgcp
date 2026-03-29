@@ -721,11 +721,17 @@ async fn invoke_monitoring(method: &str, client: &GcpClient, params: &Value) -> 
             let start_time = start.format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
             // Build instance filter for multiple instances
-            // Reject IDs containing double-quotes to prevent filter injection
+            // Security: Only allow alphanumeric, hyphens, and underscores in instance IDs
+            // to prevent filter injection (not just double-quotes)
             let instance_filter: Vec<String> = instance_ids
                 .iter()
                 .filter_map(|v| v.as_str())
-                .filter(|id| !id.contains('"'))
+                .filter(|id| {
+                    !id.is_empty()
+                        && id
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                })
                 .map(|id| format!("resource.labels.instance_id = \"{}\"", id))
                 .collect();
 
@@ -918,14 +924,15 @@ fn add_query_params(url: &str, params: &Value) -> String {
             continue;
         }
 
+        let encoded_key = urlencoding::encode(key);
         match value {
             Value::String(s) => {
-                query_parts.push(format!("{}={}", key, urlencoding::encode(s)));
+                query_parts.push(format!("{}={}", encoded_key, urlencoding::encode(s)));
             },
             Value::Array(arr) => {
                 for item in arr {
                     if let Value::String(s) = item {
-                        query_parts.push(format!("{}={}", key, urlencoding::encode(s)));
+                        query_parts.push(format!("{}={}", encoded_key, urlencoding::encode(s)));
                     }
                 }
             },
