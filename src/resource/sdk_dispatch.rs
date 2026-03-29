@@ -1002,7 +1002,8 @@ mod tests {
     #[test]
     fn add_query_params_skips_internal_params() {
         let url = "https://example.com/api";
-        let params = json!({ "bucket": "b", "cluster": "c", "location": "l", "name": "n", "real": "yes" });
+        let params =
+            json!({ "bucket": "b", "cluster": "c", "location": "l", "name": "n", "real": "yes" });
         let result = add_query_params(url, &params);
         assert_eq!(result, "https://example.com/api?real=yes");
     }
@@ -1024,7 +1025,7 @@ mod tests {
 
     #[test]
     fn monitoring_filter_rejects_injection_attempts() {
-        let ids = vec![
+        let ids = [
             json!("valid-id_123"),
             json!("evil\" OR 1=1"),
             json!("has spaces"),
