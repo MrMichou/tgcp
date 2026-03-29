@@ -252,6 +252,101 @@ pub enum OperationStatus {
     Unknown(String),
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // =========================================================================
+    // extract_operation_url tests
+    // =========================================================================
+
+    #[test]
+    fn test_extract_operation_url_present() {
+        let response = json!({
+            "selfLink": "https://compute.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/operations/op-123"
+        });
+        let url = extract_operation_url(&response);
+        assert_eq!(url, Some("https://compute.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/operations/op-123".to_string()));
+    }
+
+    #[test]
+    fn test_extract_operation_url_missing() {
+        let response = json!({"status": "DONE"});
+        assert_eq!(extract_operation_url(&response), None);
+    }
+
+    #[test]
+    fn test_extract_operation_url_null() {
+        let response = json!({"selfLink": null});
+        assert_eq!(extract_operation_url(&response), None);
+    }
+
+    #[test]
+    fn test_extract_operation_url_non_string() {
+        let response = json!({"selfLink": 12345});
+        assert_eq!(extract_operation_url(&response), None);
+    }
+
+    // =========================================================================
+    // OperationStatus tests
+    // =========================================================================
+
+    #[test]
+    fn test_operation_status_equality() {
+        assert_eq!(OperationStatus::Running, OperationStatus::Running);
+        assert_eq!(OperationStatus::Done, OperationStatus::Done);
+        assert_eq!(
+            OperationStatus::Failed("err".into()),
+            OperationStatus::Failed("err".into())
+        );
+        assert_ne!(OperationStatus::Running, OperationStatus::Done);
+        assert_ne!(
+            OperationStatus::Failed("a".into()),
+            OperationStatus::Failed("b".into())
+        );
+    }
+
+    #[test]
+    fn test_operation_status_clone() {
+        let status = OperationStatus::Failed("something went wrong".into());
+        let cloned = status.clone();
+        assert_eq!(status, cloned);
+    }
+
+    #[test]
+    fn test_operation_status_debug() {
+        let status = OperationStatus::Running;
+        let debug = format!("{:?}", status);
+        assert_eq!(debug, "Running");
+    }
+
+    // =========================================================================
+    // format_gcp_error (delegates to http::format_gcp_error)
+    // =========================================================================
+
+    #[test]
+    fn test_format_gcp_error_403() {
+        let err = anyhow::anyhow!("API request failed: 403");
+        let msg = format_gcp_error(&err);
+        assert!(msg.contains("Permission denied"));
+    }
+
+    #[test]
+    fn test_format_gcp_error_401() {
+        let err = anyhow::anyhow!("API request failed: 401");
+        let msg = format_gcp_error(&err);
+        assert!(msg.contains("Authentication failed"));
+    }
+
+    #[test]
+    fn test_format_gcp_error_404() {
+        let err = anyhow::anyhow!("API request failed: 404");
+        let msg = format_gcp_error(&err);
+        assert!(msg.contains("not found"));
+    }
+}
+
 /// Extract operation self-link URL from a GCP API response
 pub fn extract_operation_url(response: &Value) -> Option<String> {
     response

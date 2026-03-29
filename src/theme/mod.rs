@@ -737,3 +737,167 @@ impl Default for ThemeManager {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // validate_theme_name tests
+    // =========================================================================
+
+    #[test]
+    fn test_valid_theme_names() {
+        assert!(validate_theme_name("default"));
+        assert!(validate_theme_name("my-theme"));
+        assert!(validate_theme_name("my_theme"));
+        assert!(validate_theme_name("dracula"));
+        assert!(validate_theme_name("a1b2c3"));
+        assert!(validate_theme_name("theme123"));
+    }
+
+    #[test]
+    fn test_invalid_theme_name_empty() {
+        assert!(!validate_theme_name(""));
+    }
+
+    #[test]
+    fn test_invalid_theme_name_too_long() {
+        assert!(!validate_theme_name(&"a".repeat(65)));
+        assert!(validate_theme_name(&"a".repeat(64))); // exactly 64 is ok
+    }
+
+    #[test]
+    fn test_invalid_theme_name_starts_with_dot() {
+        assert!(!validate_theme_name(".hidden"));
+        assert!(!validate_theme_name(".."));
+    }
+
+    #[test]
+    fn test_invalid_theme_name_starts_with_hyphen() {
+        assert!(!validate_theme_name("-start"));
+    }
+
+    #[test]
+    fn test_invalid_theme_name_path_traversal() {
+        assert!(!validate_theme_name("../etc"));
+        assert!(!validate_theme_name("foo/bar"));
+        assert!(!validate_theme_name("foo\\bar"));
+    }
+
+    #[test]
+    fn test_invalid_theme_name_spaces() {
+        assert!(!validate_theme_name("has space"));
+    }
+
+    // =========================================================================
+    // Theme::builtin tests
+    // =========================================================================
+
+    #[test]
+    fn test_builtin_known_themes() {
+        assert!(Theme::builtin("default").is_some());
+        assert!(Theme::builtin("dracula").is_some());
+        assert!(Theme::builtin("monokai").is_some());
+        assert!(Theme::builtin("nord").is_some());
+        assert!(Theme::builtin("gruvbox").is_some());
+        assert!(Theme::builtin("solarized").is_some());
+        assert!(Theme::builtin("solarized-dark").is_some());
+        assert!(Theme::builtin("production").is_some());
+        assert!(Theme::builtin("prod").is_some());
+    }
+
+    #[test]
+    fn test_builtin_case_insensitive() {
+        assert!(Theme::builtin("DRACULA").is_some());
+        assert!(Theme::builtin("Nord").is_some());
+        assert!(Theme::builtin("MONOKAI").is_some());
+    }
+
+    #[test]
+    fn test_builtin_unknown() {
+        assert!(Theme::builtin("nonexistent").is_none());
+        assert!(Theme::builtin("").is_none());
+    }
+
+    #[test]
+    fn test_builtin_names_match() {
+        assert_eq!(Theme::builtin("dracula").unwrap().name, "dracula");
+        assert_eq!(Theme::builtin("monokai").unwrap().name, "monokai");
+        assert_eq!(Theme::builtin("nord").unwrap().name, "nord");
+        assert_eq!(Theme::builtin("gruvbox").unwrap().name, "gruvbox");
+        assert_eq!(Theme::builtin("solarized").unwrap().name, "solarized");
+        assert_eq!(Theme::builtin("production").unwrap().name, "production");
+    }
+
+    // =========================================================================
+    // Theme defaults tests
+    // =========================================================================
+
+    #[test]
+    fn test_theme_default_name() {
+        let theme = Theme::default();
+        assert_eq!(theme.name, "default");
+    }
+
+    #[test]
+    fn test_theme_default_colors() {
+        let theme = Theme::default();
+        assert_eq!(theme.base.background, [0, 0, 0]);
+        assert_eq!(theme.base.foreground, [255, 255, 255]);
+        assert_eq!(theme.status.running, [85, 255, 85]);
+    }
+
+    // =========================================================================
+    // ThemeManager tests
+    // =========================================================================
+
+    #[test]
+    fn test_theme_manager_new() {
+        let tm = ThemeManager::new();
+        assert_eq!(tm.current().name, "default");
+    }
+
+    #[test]
+    fn test_theme_manager_set_builtin() {
+        let mut tm = ThemeManager::new();
+        assert!(tm.set_theme("dracula"));
+        assert_eq!(tm.current().name, "dracula");
+    }
+
+    #[test]
+    fn test_theme_manager_set_invalid_name() {
+        let mut tm = ThemeManager::new();
+        assert!(!tm.set_theme("../etc/passwd"));
+        assert_eq!(tm.current().name, "default"); // unchanged
+    }
+
+    #[test]
+    fn test_theme_manager_set_unknown() {
+        let mut tm = ThemeManager::new();
+        assert!(!tm.set_theme("nonexistent"));
+        assert_eq!(tm.current().name, "default"); // unchanged
+    }
+
+    #[test]
+    fn test_list_available_contains_builtins() {
+        let themes = ThemeManager::list_available();
+        assert!(themes.contains(&"default".to_string()));
+        assert!(themes.contains(&"dracula".to_string()));
+        assert!(themes.contains(&"monokai".to_string()));
+        assert!(themes.contains(&"nord".to_string()));
+        assert!(themes.contains(&"gruvbox".to_string()));
+        assert!(themes.contains(&"solarized".to_string()));
+        assert!(themes.contains(&"production".to_string()));
+    }
+
+    // =========================================================================
+    // Theme color conversion
+    // =========================================================================
+
+    #[test]
+    fn test_theme_color_conversion() {
+        let color = Theme::color([255, 128, 0]);
+        assert_eq!(color, Color::Rgb(255, 128, 0));
+    }
+}

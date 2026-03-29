@@ -1771,4 +1771,295 @@ mod tests {
         assert!(selected_indices.contains(&4));
         assert_eq!(selected, 4);
     }
+
+    // =========================================================================
+    // NavigationState tests
+    // =========================================================================
+
+    #[test]
+    fn test_navigation_state_new_defaults() {
+        let nav = NavigationState::new();
+        assert_eq!(nav.selected, 0);
+        assert_eq!(nav.scroll_offset, 0);
+        assert_eq!(nav.viewport_height, DEFAULT_VIEWPORT_HEIGHT);
+        assert!(nav.parent_context.is_none());
+        assert!(nav.navigation_stack.is_empty());
+    }
+
+    #[test]
+    fn test_navigation_state_reset() {
+        let mut nav = NavigationState::new();
+        nav.selected = 42;
+        nav.scroll_offset = 10;
+        nav.reset();
+        assert_eq!(nav.selected, 0);
+        assert_eq!(nav.scroll_offset, 0);
+        // viewport_height should NOT be reset
+        assert_eq!(nav.viewport_height, DEFAULT_VIEWPORT_HEIGHT);
+    }
+
+    #[test]
+    fn test_navigation_state_clear_hierarchy() {
+        let mut nav = NavigationState::new();
+        nav.parent_context = Some(ParentContext {
+            resource_key: "compute-instances".to_string(),
+            item: serde_json::json!({"name": "vm-1"}),
+            display_name: "vm-1".to_string(),
+        });
+        nav.navigation_stack.push(ParentContext {
+            resource_key: "compute-disks".to_string(),
+            item: serde_json::json!({"name": "disk-1"}),
+            display_name: "disk-1".to_string(),
+        });
+
+        nav.clear_hierarchy();
+        assert!(nav.parent_context.is_none());
+        assert!(nav.navigation_stack.is_empty());
+    }
+
+    // =========================================================================
+    // SelectionState tests
+    // =========================================================================
+
+    #[test]
+    fn test_selection_state_toggle() {
+        let mut sel = SelectionState::default();
+        assert!(!sel.is_selected(3));
+
+        sel.toggle(3);
+        assert!(sel.is_selected(3));
+        assert_eq!(sel.count(), 1);
+
+        sel.toggle(3);
+        assert!(!sel.is_selected(3));
+        assert_eq!(sel.count(), 0);
+    }
+
+    #[test]
+    fn test_selection_state_select_all() {
+        let mut sel = SelectionState::default();
+        sel.select_all(5);
+        assert_eq!(sel.count(), 5);
+        for i in 0..5 {
+            assert!(sel.is_selected(i));
+        }
+        assert!(!sel.is_selected(5));
+    }
+
+    #[test]
+    fn test_selection_state_clear() {
+        let mut sel = SelectionState::default();
+        sel.select_all(10);
+        sel.visual_mode = true;
+        sel.clear();
+        assert_eq!(sel.count(), 0);
+        assert!(!sel.visual_mode);
+    }
+
+    // =========================================================================
+    // FilterSortState tests
+    // =========================================================================
+
+    #[test]
+    fn test_filter_sort_state_clear_filter() {
+        let mut fs = FilterSortState {
+            filter_text: "running".to_string(),
+            filter_active: true,
+            sort_column: Some(2),
+            sort_ascending: false,
+        };
+        fs.clear_filter();
+        assert!(fs.filter_text.is_empty());
+        assert!(!fs.filter_active);
+        // sort should NOT be cleared
+        assert_eq!(fs.sort_column, Some(2));
+    }
+
+    #[test]
+    fn test_filter_sort_state_clear_sort() {
+        let mut fs = FilterSortState {
+            filter_text: "running".to_string(),
+            filter_active: true,
+            sort_column: Some(2),
+            sort_ascending: false,
+        };
+        fs.clear_sort();
+        assert!(fs.sort_column.is_none());
+        // filter should NOT be cleared
+        assert_eq!(fs.filter_text, "running");
+    }
+
+    #[test]
+    fn test_filter_sort_state_reset() {
+        let mut fs = FilterSortState {
+            filter_text: "running".to_string(),
+            filter_active: true,
+            sort_column: Some(2),
+            sort_ascending: false,
+        };
+        fs.reset();
+        assert!(fs.filter_text.is_empty());
+        assert!(!fs.filter_active);
+        assert!(fs.sort_column.is_none());
+        assert!(fs.sort_ascending); // reset to ascending
+    }
+
+    // =========================================================================
+    // CommandState tests
+    // =========================================================================
+
+    #[test]
+    fn test_command_state_next_suggestion_wraps() {
+        let mut cmd = CommandState {
+            text: String::new(),
+            suggestions: vec!["a".into(), "b".into(), "c".into()],
+            suggestion_selected: 0,
+            preview: None,
+        };
+
+        cmd.next_suggestion();
+        assert_eq!(cmd.suggestion_selected, 1);
+        cmd.next_suggestion();
+        assert_eq!(cmd.suggestion_selected, 2);
+        cmd.next_suggestion();
+        assert_eq!(cmd.suggestion_selected, 0); // wraps
+    }
+
+    #[test]
+    fn test_command_state_prev_suggestion_wraps() {
+        let mut cmd = CommandState {
+            text: String::new(),
+            suggestions: vec!["a".into(), "b".into(), "c".into()],
+            suggestion_selected: 0,
+            preview: None,
+        };
+
+        cmd.prev_suggestion();
+        assert_eq!(cmd.suggestion_selected, 2); // wraps to end
+        cmd.prev_suggestion();
+        assert_eq!(cmd.suggestion_selected, 1);
+    }
+
+    #[test]
+    fn test_command_state_empty_suggestions_noop() {
+        let mut cmd = CommandState::default();
+        cmd.next_suggestion();
+        assert_eq!(cmd.suggestion_selected, 0);
+        cmd.prev_suggestion();
+        assert_eq!(cmd.suggestion_selected, 0);
+    }
+
+    #[test]
+    fn test_command_state_apply_suggestion() {
+        let mut cmd = CommandState {
+            text: "comp".into(),
+            suggestions: vec!["compute-instances".into()],
+            suggestion_selected: 0,
+            preview: Some("compute-instances".into()),
+        };
+        cmd.apply_suggestion();
+        assert_eq!(cmd.text, "compute-instances");
+    }
+
+    #[test]
+    fn test_command_state_update_preview() {
+        let mut cmd = CommandState {
+            text: String::new(),
+            suggestions: vec!["alpha".into(), "beta".into()],
+            suggestion_selected: 1,
+            preview: None,
+        };
+        cmd.update_preview();
+        assert_eq!(cmd.preview, Some("beta".into()));
+    }
+
+    // =========================================================================
+    // SelectorState tests
+    // =========================================================================
+
+    #[test]
+    fn test_selector_state_init() {
+        let mut sel = SelectorState::default();
+        let items = vec!["proj-a".into(), "proj-b".into(), "proj-c".into()];
+        sel.init(&items, "proj-b");
+        assert_eq!(sel.selected, 1);
+        assert_eq!(sel.filtered.len(), 3);
+        assert!(sel.search_text.is_empty());
+    }
+
+    #[test]
+    fn test_selector_state_init_not_found() {
+        let mut sel = SelectorState::default();
+        let items = vec!["proj-a".into(), "proj-b".into()];
+        sel.init(&items, "nonexistent");
+        assert_eq!(sel.selected, 0); // defaults to 0
+    }
+
+    #[test]
+    fn test_selector_state_apply_filter() {
+        let mut sel = SelectorState::default();
+        let items: Vec<String> = vec!["proj-alpha".into(), "proj-beta".into(), "gamma".into()];
+        sel.search_text = "proj".into();
+        sel.selected = 5; // out of bounds after filter
+
+        sel.apply_filter(&items);
+        assert_eq!(sel.filtered, vec!["proj-alpha", "proj-beta"]);
+        assert_eq!(sel.selected, 0); // reset because was out of bounds
+    }
+
+    #[test]
+    fn test_selector_state_apply_filter_case_insensitive() {
+        let mut sel = SelectorState::default();
+        let items: Vec<String> = vec!["MyProject".into(), "other".into()];
+        sel.search_text = "myp".into();
+        sel.apply_filter(&items);
+        assert_eq!(sel.filtered, vec!["MyProject"]);
+    }
+
+    #[test]
+    fn test_selector_state_apply_empty_filter() {
+        let mut sel = SelectorState::default();
+        let items: Vec<String> = vec!["a".into(), "b".into()];
+        sel.search_text.clear();
+        sel.apply_filter(&items);
+        assert_eq!(sel.filtered.len(), 2); // all items returned
+    }
+
+    #[test]
+    fn test_selector_state_current() {
+        let mut sel = SelectorState::default();
+        sel.filtered = vec!["x".into(), "y".into()];
+        sel.selected = 1;
+        assert_eq!(sel.current(), Some(&"y".to_string()));
+    }
+
+    #[test]
+    fn test_selector_state_current_empty() {
+        let sel = SelectorState::default();
+        assert_eq!(sel.current(), None);
+    }
+
+    // =========================================================================
+    // PaginationState tests
+    // =========================================================================
+
+    #[test]
+    fn test_pagination_state_default() {
+        let pg = PaginationState::default();
+        assert!(pg.next_token.is_none());
+        assert!(pg.token_stack.is_empty());
+        assert_eq!(pg.current_page, 0);
+        assert!(!pg.has_more);
+    }
+
+    // =========================================================================
+    // Mode tests
+    // =========================================================================
+
+    #[test]
+    fn test_mode_equality() {
+        assert_eq!(Mode::Normal, Mode::Normal);
+        assert_ne!(Mode::Normal, Mode::Command);
+        assert_eq!(Mode::Describe, Mode::Describe);
+    }
 }

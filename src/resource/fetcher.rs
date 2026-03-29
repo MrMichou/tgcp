@@ -1007,3 +1007,404 @@ pub fn extract_json_value(item: &Value, path: &str) -> String {
         Value::Object(_) => "[object]".to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ── extract_json_value ──────────────────────────────────────────
+
+    #[test]
+    fn test_extract_json_value_simple_key() {
+        let item = json!({"name": "test"});
+        assert_eq!(extract_json_value(&item, "name"), "test");
+    }
+
+    #[test]
+    fn test_extract_json_value_nested() {
+        let item = json!({"a": {"b": "c"}});
+        assert_eq!(extract_json_value(&item, "a.b"), "c");
+    }
+
+    #[test]
+    fn test_extract_json_value_deeply_nested() {
+        let item = json!({"a": {"b": {"c": {"d": "deep"}}}});
+        assert_eq!(extract_json_value(&item, "a.b.c.d"), "deep");
+    }
+
+    #[test]
+    fn test_extract_json_value_array_index() {
+        let item = json!({"arr": ["x", "y", "z"]});
+        assert_eq!(extract_json_value(&item, "arr.0"), "x");
+        assert_eq!(extract_json_value(&item, "arr.1"), "y");
+        assert_eq!(extract_json_value(&item, "arr.2"), "z");
+    }
+
+    #[test]
+    fn test_extract_json_value_array_index_out_of_bounds() {
+        let item = json!({"arr": ["x"]});
+        assert_eq!(extract_json_value(&item, "arr.5"), "-");
+    }
+
+    #[test]
+    fn test_extract_json_value_missing_key() {
+        let item = json!({"name": "test"});
+        assert_eq!(extract_json_value(&item, "missing"), "-");
+    }
+
+    #[test]
+    fn test_extract_json_value_missing_nested_key() {
+        let item = json!({"a": {"b": "c"}});
+        assert_eq!(extract_json_value(&item, "a.x"), "-");
+    }
+
+    #[test]
+    fn test_extract_json_value_null() {
+        let item = json!({"val": null});
+        assert_eq!(extract_json_value(&item, "val"), "-");
+    }
+
+    #[test]
+    fn test_extract_json_value_number() {
+        let item = json!({"count": 42});
+        assert_eq!(extract_json_value(&item, "count"), "42");
+    }
+
+    #[test]
+    fn test_extract_json_value_float() {
+        let item = json!({"ratio": 3.14});
+        assert_eq!(extract_json_value(&item, "ratio"), "3.14");
+    }
+
+    #[test]
+    fn test_extract_json_value_bool_true() {
+        let item = json!({"enabled": true});
+        assert_eq!(extract_json_value(&item, "enabled"), "true");
+    }
+
+    #[test]
+    fn test_extract_json_value_bool_false() {
+        let item = json!({"enabled": false});
+        assert_eq!(extract_json_value(&item, "enabled"), "false");
+    }
+
+    #[test]
+    fn test_extract_json_value_array_value() {
+        let item = json!({"tags": ["a", "b", "c"]});
+        assert_eq!(extract_json_value(&item, "tags"), "[3 items]");
+    }
+
+    #[test]
+    fn test_extract_json_value_empty_array() {
+        let item = json!({"tags": []});
+        assert_eq!(extract_json_value(&item, "tags"), "[0 items]");
+    }
+
+    #[test]
+    fn test_extract_json_value_object_value() {
+        let item = json!({"meta": {"key": "val"}});
+        assert_eq!(extract_json_value(&item, "meta"), "[object]");
+    }
+
+    // ── extract_short_name ──────────────────────────────────────────
+
+    #[test]
+    fn test_extract_short_name_full_url() {
+        assert_eq!(
+            extract_short_name(
+                "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a"
+            ),
+            "us-central1-a"
+        );
+    }
+
+    #[test]
+    fn test_extract_short_name_machine_type_url() {
+        assert_eq!(
+            extract_short_name(
+                "https://www.googleapis.com/compute/v1/projects/p/zones/z/machineTypes/n1-standard-4"
+            ),
+            "n1-standard-4"
+        );
+    }
+
+    #[test]
+    fn test_extract_short_name_already_short() {
+        assert_eq!(extract_short_name("us-central1-a"), "us-central1-a");
+    }
+
+    #[test]
+    fn test_extract_short_name_empty() {
+        assert_eq!(extract_short_name(""), "");
+    }
+
+    // ── extract_vcpus_from_machine_type ─────────────────────────────
+
+    #[test]
+    fn test_vcpus_standard_types() {
+        assert_eq!(extract_vcpus_from_machine_type("n1-standard-4"), "4");
+        assert_eq!(extract_vcpus_from_machine_type("n2-standard-8"), "8");
+        assert_eq!(extract_vcpus_from_machine_type("c2-standard-60"), "60");
+        assert_eq!(extract_vcpus_from_machine_type("e2-standard-2"), "2");
+    }
+
+    #[test]
+    fn test_vcpus_highcpu_highmem() {
+        assert_eq!(extract_vcpus_from_machine_type("n1-highcpu-16"), "16");
+        assert_eq!(extract_vcpus_from_machine_type("n1-highmem-32"), "32");
+    }
+
+    #[test]
+    fn test_vcpus_custom_types() {
+        assert_eq!(extract_vcpus_from_machine_type("custom-4-8192"), "4");
+        assert_eq!(extract_vcpus_from_machine_type("n1-custom-4-8192"), "4");
+        assert_eq!(extract_vcpus_from_machine_type("n2-custom-4-8192-ext"), "4");
+    }
+
+    #[test]
+    fn test_vcpus_shared_core() {
+        assert_eq!(extract_vcpus_from_machine_type("f1-micro"), "0.2");
+        assert_eq!(extract_vcpus_from_machine_type("g1-small"), "0.5");
+        assert_eq!(extract_vcpus_from_machine_type("e2-micro"), "0.25");
+        assert_eq!(extract_vcpus_from_machine_type("e2-small"), "0.5");
+        assert_eq!(extract_vcpus_from_machine_type("e2-medium"), "1");
+    }
+
+    #[test]
+    fn test_vcpus_unknown() {
+        assert_eq!(extract_vcpus_from_machine_type("unknown"), "-");
+    }
+
+    // ── format_timestamp_short ──────────────────────────────────────
+
+    #[test]
+    fn test_format_timestamp_short_rfc3339() {
+        assert_eq!(
+            format_timestamp_short("2023-01-15T10:30:00.000Z"),
+            "2023-01-15"
+        );
+    }
+
+    #[test]
+    fn test_format_timestamp_short_date_only() {
+        assert_eq!(format_timestamp_short("2023-01-15"), "2023-01-15");
+    }
+
+    #[test]
+    fn test_format_timestamp_short_short_string() {
+        assert_eq!(format_timestamp_short("short"), "short");
+    }
+
+    #[test]
+    fn test_format_timestamp_short_empty() {
+        assert_eq!(format_timestamp_short(""), "");
+    }
+
+    // ── format_bytes ────────────────────────────────────────────────
+
+    #[test]
+    fn test_format_bytes_zero() {
+        assert_eq!(format_bytes(0), "0 B");
+    }
+
+    #[test]
+    fn test_format_bytes_bytes() {
+        assert_eq!(format_bytes(512), "512 B");
+        assert_eq!(format_bytes(1023), "1023 B");
+    }
+
+    #[test]
+    fn test_format_bytes_kb() {
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(1536), "1.5 KB");
+    }
+
+    #[test]
+    fn test_format_bytes_mb() {
+        assert_eq!(format_bytes(1048576), "1.0 MB");
+    }
+
+    #[test]
+    fn test_format_bytes_gb() {
+        assert_eq!(format_bytes(1073741824), "1.0 GB");
+    }
+
+    #[test]
+    fn test_format_bytes_tb() {
+        assert_eq!(format_bytes(1099511627776), "1.0 TB");
+    }
+
+    // ── cpu_bar ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_cpu_bar_zero() {
+        assert_eq!(cpu_bar(0.0), "▁");
+    }
+
+    #[test]
+    fn test_cpu_bar_low() {
+        assert_eq!(cpu_bar(10.0), "▁");
+        assert_eq!(cpu_bar(20.0), "▂");
+    }
+
+    #[test]
+    fn test_cpu_bar_mid() {
+        assert_eq!(cpu_bar(50.0), "▄");
+    }
+
+    #[test]
+    fn test_cpu_bar_high() {
+        assert_eq!(cpu_bar(75.0), "▆");
+        assert_eq!(cpu_bar(87.0), "▇");
+    }
+
+    #[test]
+    fn test_cpu_bar_max() {
+        assert_eq!(cpu_bar(100.0), "█");
+    }
+
+    #[test]
+    fn test_cpu_bar_over_100() {
+        assert_eq!(cpu_bar(150.0), "█");
+    }
+
+    // ── get_trend ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_get_trend_no_previous() {
+        assert_eq!(get_trend(None, "cpu", 50.0), "");
+    }
+
+    #[test]
+    fn test_get_trend_no_matching_metric() {
+        let prev = HashMap::from([("other".to_string(), 50.0)]);
+        assert_eq!(get_trend(Some(&prev), "cpu", 50.0), "");
+    }
+
+    #[test]
+    fn test_get_trend_increasing() {
+        let prev = HashMap::from([("cpu".to_string(), 50.0)]);
+        assert_eq!(get_trend(Some(&prev), "cpu", 60.0), "↑");
+    }
+
+    #[test]
+    fn test_get_trend_decreasing() {
+        let prev = HashMap::from([("cpu".to_string(), 50.0)]);
+        assert_eq!(get_trend(Some(&prev), "cpu", 40.0), "↓");
+    }
+
+    #[test]
+    fn test_get_trend_stable() {
+        let prev = HashMap::from([("cpu".to_string(), 50.0)]);
+        // Within 5% threshold (50 * 0.05 = 2.5)
+        assert_eq!(get_trend(Some(&prev), "cpu", 51.0), "");
+    }
+
+    // ── format_bytes_per_sec ────────────────────────────────────────
+
+    #[test]
+    fn test_format_bytes_per_sec_zero() {
+        assert_eq!(format_bytes_per_sec(0.0), "0");
+    }
+
+    #[test]
+    fn test_format_bytes_per_sec_bytes() {
+        assert_eq!(format_bytes_per_sec(500.0), "500B/s");
+    }
+
+    #[test]
+    fn test_format_bytes_per_sec_kb() {
+        assert_eq!(format_bytes_per_sec(1024.0), "1.0KB/s");
+        assert_eq!(format_bytes_per_sec(2048.0), "2.0KB/s");
+    }
+
+    #[test]
+    fn test_format_bytes_per_sec_mb() {
+        assert_eq!(format_bytes_per_sec(1048576.0), "1.0MB/s");
+    }
+
+    #[test]
+    fn test_format_bytes_per_sec_gb() {
+        assert_eq!(format_bytes_per_sec(1073741824.0), "1.0GB/s");
+    }
+
+    // ── MetricsHistory ──────────────────────────────────────────────
+
+    #[test]
+    fn test_metrics_history_insert_and_get() {
+        let mut history = MetricsHistory::default();
+        let metrics = HashMap::from([("cpu".to_string(), 50.0)]);
+        history.insert("instance-1".to_string(), metrics.clone());
+
+        let retrieved = history.get("instance-1").unwrap();
+        assert_eq!(retrieved.get("cpu"), Some(&50.0));
+    }
+
+    #[test]
+    fn test_metrics_history_get_missing() {
+        let history = MetricsHistory::default();
+        assert!(history.get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_metrics_history_clear() {
+        let mut history = MetricsHistory::default();
+        history.insert("a".to_string(), HashMap::new());
+        history.insert("b".to_string(), HashMap::new());
+        assert_eq!(history.values.len(), 2);
+
+        history.clear();
+        assert_eq!(history.values.len(), 0);
+    }
+
+    #[test]
+    fn test_metrics_history_update_existing() {
+        let mut history = MetricsHistory::default();
+        history.insert(
+            "instance-1".to_string(),
+            HashMap::from([("cpu".to_string(), 50.0)]),
+        );
+        history.insert(
+            "instance-1".to_string(),
+            HashMap::from([("cpu".to_string(), 75.0)]),
+        );
+
+        let retrieved = history.get("instance-1").unwrap();
+        assert_eq!(retrieved.get("cpu"), Some(&75.0));
+        assert_eq!(history.values.len(), 1);
+    }
+
+    #[test]
+    fn test_metrics_history_capacity_eviction() {
+        let mut history = MetricsHistory::default();
+
+        // Fill to capacity
+        for i in 0..MAX_METRICS_HISTORY_ENTRIES {
+            history.insert(format!("instance-{}", i), HashMap::new());
+        }
+        assert_eq!(history.values.len(), MAX_METRICS_HISTORY_ENTRIES);
+
+        // Insert one more - should evict to stay within limits
+        history.insert("new-instance".to_string(), HashMap::new());
+        assert!(history.values.len() <= MAX_METRICS_HISTORY_ENTRIES);
+        assert!(history.get("new-instance").is_some());
+    }
+
+    #[test]
+    fn test_metrics_history_no_eviction_on_update() {
+        let mut history = MetricsHistory::default();
+
+        // Fill to capacity
+        for i in 0..MAX_METRICS_HISTORY_ENTRIES {
+            history.insert(format!("instance-{}", i), HashMap::new());
+        }
+
+        // Updating an existing key should not evict
+        history.insert(
+            "instance-0".to_string(),
+            HashMap::from([("cpu".to_string(), 99.0)]),
+        );
+        assert_eq!(history.values.len(), MAX_METRICS_HISTORY_ENTRIES);
+    }
+}
