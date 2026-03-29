@@ -2027,9 +2027,11 @@ mod tests {
 
     #[test]
     fn test_selector_state_current() {
-        let mut sel = SelectorState::default();
-        sel.filtered = vec!["x".into(), "y".into()];
-        sel.selected = 1;
+        let sel = SelectorState {
+            filtered: vec!["x".into(), "y".into()],
+            selected: 1,
+            ..Default::default()
+        };
         assert_eq!(sel.current(), Some(&"y".to_string()));
     }
 

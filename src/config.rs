@@ -298,8 +298,10 @@ mod tests {
 
     #[test]
     fn test_effective_theme_falls_back_to_default_theme() {
-        let mut config = Config::default();
-        config.theme = Some("dracula".into());
+        let config = Config {
+            theme: Some("dracula".into()),
+            ..Default::default()
+        };
 
         assert_eq!(config.effective_theme("unknown-project"), "dracula");
     }
@@ -352,10 +354,12 @@ mod tests {
 
     #[test]
     fn test_serialization_round_trip() {
-        let mut config = Config::default();
-        config.project_id = Some("my-project".into());
-        config.zone = Some("us-central1-a".into());
-        config.theme = Some("dracula".into());
+        let mut config = Config {
+            project_id: Some("my-project".into()),
+            zone: Some("us-central1-a".into()),
+            theme: Some("dracula".into()),
+            ..Default::default()
+        };
         config
             .aliases
             .insert("vm".into(), "compute-instances".into());
