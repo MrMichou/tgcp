@@ -721,11 +721,17 @@ async fn invoke_monitoring(method: &str, client: &GcpClient, params: &Value) -> 
             let start_time = start.format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
             // Build instance filter for multiple instances
-            // Reject IDs containing double-quotes to prevent filter injection
+            // Security: Only allow alphanumeric, hyphens, and underscores in instance IDs
+            // to prevent filter injection (not just double-quotes)
             let instance_filter: Vec<String> = instance_ids
                 .iter()
                 .filter_map(|v| v.as_str())
-                .filter(|id| !id.contains('"'))
+                .filter(|id| {
+                    !id.is_empty()
+                        && id
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                })
                 .map(|id| format!("resource.labels.instance_id = \"{}\"", id))
                 .collect();
 
@@ -918,14 +924,15 @@ fn add_query_params(url: &str, params: &Value) -> String {
             continue;
         }
 
+        let encoded_key = urlencoding::encode(key);
         match value {
             Value::String(s) => {
-                query_parts.push(format!("{}={}", key, urlencoding::encode(s)));
+                query_parts.push(format!("{}={}", encoded_key, urlencoding::encode(s)));
             },
             Value::Array(arr) => {
                 for item in arr {
                     if let Value::String(s) = item {
-                        query_parts.push(format!("{}={}", key, urlencoding::encode(s)));
+                        query_parts.push(format!("{}={}", encoded_key, urlencoding::encode(s)));
                     }
                 }
             },
@@ -969,4 +976,78 @@ fn flatten_aggregated_response(response: Value) -> Value {
     }
 
     serde_json::json!({ "items": all_items })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn add_query_params_encodes_keys_and_values() {
+        let url = "https://example.com/api";
+        let params = json!({ "foo bar": "hello world" });
+        let result = add_query_params(url, &params);
+        assert_eq!(result, "https://example.com/api?foo%20bar=hello%20world");
+    }
+
+    #[test]
+    fn add_query_params_appends_to_existing_query() {
+        let url = "https://example.com/api?existing=1";
+        let params = json!({ "key": "val" });
+        let result = add_query_params(url, &params);
+        assert_eq!(result, "https://example.com/api?existing=1&key=val");
+    }
+
+    #[test]
+    fn add_query_params_skips_internal_params() {
+        let url = "https://example.com/api";
+        let params =
+            json!({ "bucket": "b", "cluster": "c", "location": "l", "name": "n", "real": "yes" });
+        let result = add_query_params(url, &params);
+        assert_eq!(result, "https://example.com/api?real=yes");
+    }
+
+    #[test]
+    fn add_query_params_handles_array_values() {
+        let url = "https://example.com/api";
+        let params = json!({ "tag": ["a", "b"] });
+        let result = add_query_params(url, &params);
+        assert_eq!(result, "https://example.com/api?tag=a&tag=b");
+    }
+
+    #[test]
+    fn add_query_params_returns_url_unchanged_for_non_object() {
+        let url = "https://example.com/api";
+        let result = add_query_params(url, &json!("not an object"));
+        assert_eq!(result, url);
+    }
+
+    #[test]
+    fn monitoring_filter_rejects_injection_attempts() {
+        let ids = [
+            json!("valid-id_123"),
+            json!("evil\" OR 1=1"),
+            json!("has spaces"),
+            json!("semi;colon"),
+            json!(""),
+            json!("good_one"),
+        ];
+
+        let valid: Vec<String> = ids
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter(|id| {
+                !id.is_empty()
+                    && id
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            })
+            .map(|id| format!("resource.labels.instance_id = \"{}\"", id))
+            .collect();
+
+        assert_eq!(valid.len(), 2);
+        assert!(valid[0].contains("valid-id_123"));
+        assert!(valid[1].contains("good_one"));
+    }
 }
