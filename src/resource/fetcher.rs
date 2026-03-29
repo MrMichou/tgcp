@@ -1073,8 +1073,8 @@ mod tests {
 
     #[test]
     fn test_extract_json_value_float() {
-        let item = json!({"ratio": 3.14});
-        assert_eq!(extract_json_value(&item, "ratio"), "3.14");
+        let item = json!({"ratio": 2.718});
+        assert_eq!(extract_json_value(&item, "ratio"), "2.718");
     }
 
     #[test]

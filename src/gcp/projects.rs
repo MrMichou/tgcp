@@ -81,6 +81,12 @@ pub async fn list_projects(client: &GcpClient) -> Result<Vec<Project>> {
     Ok(all_projects)
 }
 
+/// Get project IDs as a simple list
+pub async fn list_project_ids(client: &GcpClient) -> Result<Vec<String>> {
+    let projects = list_projects(client).await?;
+    Ok(projects.into_iter().map(|p| p.project_id).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,10 +144,4 @@ mod tests {
         let debug = format!("{:?}", project);
         assert!(debug.contains("test"));
     }
-}
-
-/// Get project IDs as a simple list
-pub async fn list_project_ids(client: &GcpClient) -> Result<Vec<String>> {
-    let projects = list_projects(client).await?;
-    Ok(projects.into_iter().map(|p| p.project_id).collect())
 }

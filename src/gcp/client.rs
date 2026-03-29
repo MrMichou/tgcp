@@ -252,14 +252,23 @@ pub enum OperationStatus {
     Unknown(String),
 }
 
+/// Extract operation self-link URL from a GCP API response
+pub fn extract_operation_url(response: &Value) -> Option<String> {
+    response
+        .get("selfLink")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+}
+
+/// Format a GCP API error for display
+pub fn format_gcp_error(error: &anyhow::Error) -> String {
+    super::http::format_gcp_error(error)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
-
-    // =========================================================================
-    // extract_operation_url tests
-    // =========================================================================
 
     #[test]
     fn test_extract_operation_url_present() {
@@ -287,10 +296,6 @@ mod tests {
         let response = json!({"selfLink": 12345});
         assert_eq!(extract_operation_url(&response), None);
     }
-
-    // =========================================================================
-    // OperationStatus tests
-    // =========================================================================
 
     #[test]
     fn test_operation_status_equality() {
@@ -321,10 +326,6 @@ mod tests {
         assert_eq!(debug, "Running");
     }
 
-    // =========================================================================
-    // format_gcp_error (delegates to http::format_gcp_error)
-    // =========================================================================
-
     #[test]
     fn test_format_gcp_error_403() {
         let err = anyhow::anyhow!("API request failed: 403");
@@ -345,17 +346,4 @@ mod tests {
         let msg = format_gcp_error(&err);
         assert!(msg.contains("not found"));
     }
-}
-
-/// Extract operation self-link URL from a GCP API response
-pub fn extract_operation_url(response: &Value) -> Option<String> {
-    response
-        .get("selfLink")
-        .and_then(|v| v.as_str())
-        .map(String::from)
-}
-
-/// Format a GCP API error for display
-pub fn format_gcp_error(error: &anyhow::Error) -> String {
-    super::http::format_gcp_error(error)
 }
