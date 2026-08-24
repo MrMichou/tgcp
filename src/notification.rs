@@ -380,11 +380,8 @@ impl NotificationManager {
     /// Get the most recent active notification (for toast display)
     pub fn current_toast(&self) -> Option<&Notification> {
         // Check if toast should still be visible
-        if let Some(last_time) = self.last_toast_time {
-            if last_time.elapsed() > self.toast_duration {
-                return None;
-            }
-        } else {
+        let last_time = self.last_toast_time?;
+        if last_time.elapsed() > self.toast_duration {
             return None;
         }
 
