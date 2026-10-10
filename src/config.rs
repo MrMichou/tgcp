@@ -133,10 +133,49 @@ impl Config {
             return Self::default();
         }
 
-        match std::fs::read_to_string(&path) {
-            Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-            Err(_) => Self::default(),
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) => {
+                tracing::warn!("Failed to read config file {:?}: {}", path, e);
+                return Self::default();
+            },
+        };
+
+        match serde_json::from_str::<Self>(&content) {
+            Ok(config) => config.sanitized(),
+            Err(e) => {
+                // Keep a copy of the unparsable file so a later save() doesn't
+                // silently overwrite the user's settings.
+                let backup = path.with_extension("json.bak");
+                tracing::warn!(
+                    "Failed to parse config file {:?}: {}. Moving it to {:?}",
+                    path,
+                    e,
+                    backup
+                );
+                if let Err(e) = std::fs::rename(&path, &backup) {
+                    tracing::warn!("Failed to back up invalid config file: {}", e);
+                }
+                Self::default()
+            },
         }
+    }
+
+    /// Drop project/zone values that don't match the GCP naming rules
+    fn sanitized(mut self) -> Self {
+        if let Some(project) = &self.project_id {
+            if !crate::gcp::auth::validate_project_id(project) {
+                tracing::warn!("Ignoring invalid project ID in config: {:?}", project);
+                self.project_id = None;
+            }
+        }
+        if let Some(zone) = &self.zone {
+            if !crate::gcp::auth::validate_zone_name(zone) {
+                tracing::warn!("Ignoring invalid zone in config: {:?}", zone);
+                self.zone = None;
+            }
+        }
+        self
     }
 
     /// Save configuration to disk
@@ -159,7 +198,17 @@ impl Config {
         }
 
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, &content)?;
+
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        // Security: create the file as 0600 so it is never readable by others
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&path)?;
+        std::io::Write::write_all(&mut file, content.as_bytes())?;
 
         // Security: Set file permissions to 0600 (owner read/write only)
         #[cfg(unix)]
@@ -189,12 +238,18 @@ impl Config {
 
     /// Set project and save
     pub fn set_project(&mut self, project_id: &str) -> Result<()> {
+        if !crate::gcp::auth::validate_project_id(project_id) {
+            anyhow::bail!("Invalid project ID: {}", project_id);
+        }
         self.project_id = Some(project_id.to_string());
         self.save()
     }
 
     /// Set zone and save
     pub fn set_zone(&mut self, zone: &str) -> Result<()> {
+        if !crate::gcp::auth::validate_zone_name(zone) {
+            anyhow::bail!("Invalid zone: {}", zone);
+        }
         self.zone = Some(zone.to_string());
         self.save()
     }
@@ -253,6 +308,36 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_config_sanitized_drops_invalid_project_and_zone() {
+        let config = Config {
+            project_id: Some("../evil?x=1".to_string()),
+            zone: Some("us-central1-a/../../x".to_string()),
+            ..Default::default()
+        }
+        .sanitized();
+        assert!(config.project_id.is_none());
+        assert!(config.zone.is_none());
+
+        let config = Config {
+            project_id: Some("my-project-123".to_string()),
+            zone: Some("all".to_string()),
+            ..Default::default()
+        }
+        .sanitized();
+        assert_eq!(config.project_id.as_deref(), Some("my-project-123"));
+        assert_eq!(config.zone.as_deref(), Some("all"));
+    }
+
+    #[test]
+    fn test_config_set_project_rejects_invalid() {
+        let mut config = Config::default();
+        assert!(config.set_project("Bad Project/..").is_err());
+        assert!(config.set_zone("zone?x=1").is_err());
+        assert!(config.project_id.is_none());
+        assert!(config.zone.is_none());
+    }
 
     #[test]
     fn test_config_default() {

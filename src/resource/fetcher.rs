@@ -80,7 +80,13 @@ pub struct PaginatedResult {
     pub next_token: Option<String>,
 }
 
+/// Maximum number of pages fetched by [`fetch_resources`] before stopping
+const MAX_PAGES: usize = 100;
+
 /// Fetch all resources (auto-paginate)
+///
+/// Stops after [`MAX_PAGES`] pages or if the API returns a page token that was
+/// already seen, so a misbehaving API can't cause an infinite loop.
 pub async fn fetch_resources(
     resource_key: &str,
     client: &GcpClient,
@@ -88,16 +94,31 @@ pub async fn fetch_resources(
 ) -> Result<Vec<Value>> {
     let mut all_items = Vec::new();
     let mut page_token: Option<String> = None;
+    let mut seen_tokens = std::collections::HashSet::new();
 
-    loop {
+    for page in 1..=MAX_PAGES {
         let result =
             fetch_resources_paginated(resource_key, client, filters, page_token.as_deref()).await?;
         all_items.extend(result.items);
 
-        if result.next_token.is_none() {
-            break;
+        let Some(next_token) = result.next_token else {
+            return Ok(all_items);
+        };
+        if !seen_tokens.insert(next_token.clone()) {
+            tracing::warn!(
+                "Repeated page token while fetching {}, stopping pagination",
+                resource_key
+            );
+            return Ok(all_items);
         }
-        page_token = result.next_token;
+        if page == MAX_PAGES {
+            tracing::warn!(
+                "Reached max page count ({}) while fetching {}, results truncated",
+                MAX_PAGES,
+                resource_key
+            );
+        }
+        page_token = Some(next_token);
     }
 
     Ok(all_items)
@@ -752,11 +773,11 @@ fn extract_vcpus_from_machine_type(machine_type: &str) -> String {
 /// Format timestamp to short form
 fn format_timestamp_short(timestamp: &str) -> String {
     // RFC3339 format: 2023-01-15T10:30:00.000Z
-    if timestamp.len() >= 10 {
-        timestamp[..10].to_string()
-    } else {
-        timestamp.to_string()
-    }
+    // Char-safe: never slice through a multi-byte character
+    timestamp
+        .get(..10)
+        .map(str::to_string)
+        .unwrap_or_else(|| timestamp.chars().take(10).collect())
 }
 
 /// Format bytes to human readable

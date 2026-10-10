@@ -337,7 +337,8 @@ async fn invoke_storage(method: &str, client: &GcpClient, params: &Value) -> Res
         },
         "list_objects" => {
             let bucket = get_param_str(params, "bucket")?;
-            let url = client.storage_objects_url(&bucket);
+            // Security: URL-encode path parameters
+            let url = client.storage_objects_url(&urlencoding::encode(&bucket));
             let url = add_query_params(&url, params);
             client.get(&url).await
         },
@@ -362,7 +363,11 @@ async fn execute_storage_action(
         },
         "delete_object" => {
             let bucket = get_param_str(params, "bucket")?;
-            let url = format!("{}/{}", client.storage_objects_url(&bucket), encoded_id);
+            let url = format!(
+                "{}/{}",
+                client.storage_objects_url(&urlencoding::encode(&bucket)),
+                encoded_id
+            );
             client.delete(&url).await
         },
         _ => Err(anyhow::anyhow!("Unknown storage action: {}", method)),
@@ -385,8 +390,11 @@ async fn invoke_container(method: &str, client: &GcpClient, params: &Value) -> R
             let cluster = get_param_str(params, "cluster")?;
             let location =
                 get_param_str_opt(params, "location").unwrap_or_else(|| client.zone.clone());
-            let url = client
-                .container_location_url(&location, &format!("clusters/{}/nodePools", cluster));
+            // Security: URL-encode path parameters
+            let url = client.container_location_url(
+                &urlencoding::encode(&location),
+                &format!("clusters/{}/nodePools", urlencoding::encode(&cluster)),
+            );
             client.get(&url).await
         },
         _ => Err(anyhow::anyhow!("Unknown container method: {}", method)),
@@ -419,6 +427,7 @@ async fn invoke_billing(method: &str, client: &GcpClient, params: &Value) -> Res
         "list_budgets" => {
             // List budgets for a billing account
             let billing_account = get_param_str(params, "billingAccount")?;
+            let billing_account = encode_resource_name(&billing_account, "billingAccounts")?;
             let url = client.billing_budgets_url(&billing_account, "budgets");
             let url = add_query_params(&url, params);
             let response = client.get(&url).await?;
@@ -442,6 +451,7 @@ async fn invoke_billing(method: &str, client: &GcpClient, params: &Value) -> Res
         "list_skus" => {
             // List SKUs (prices) for a service
             let parent = get_param_str(params, "parent")?;
+            let parent = encode_resource_name(&parent, "services")?;
             let url = client.billing_url(&format!("{}/skus", parent));
             let url = add_query_params(&url, params);
             let response = client.get(&url).await?;
@@ -911,6 +921,35 @@ fn get_param_str_opt(params: &Value, key: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// Params consumed as URL path segments (or internally) that must not be
+/// repeated in the query string
+const PATH_PARAMS: &[&str] = &[
+    "bucket",
+    "cluster",
+    "location",
+    "name",
+    "billingAccount",
+    "parent",
+];
+
+/// Percent-encode a `<collection>/<id>` resource name (e.g.
+/// `billingAccounts/0123-ABCD`) for use in a URL path, keeping the `/`
+/// separator. Rejects names that don't match the expected collection.
+fn encode_resource_name(name: &str, collection: &str) -> Result<String> {
+    match name.split_once('/') {
+        Some((prefix, id))
+            if prefix == collection && !matches!(id, "" | "." | "..") && !id.contains('/') =>
+        {
+            Ok(format!("{}/{}", collection, urlencoding::encode(id)))
+        },
+        _ => Err(anyhow::anyhow!(
+            "Invalid resource name '{}': expected '{}/<id>'",
+            name,
+            collection
+        )),
+    }
+}
+
 fn add_query_params(url: &str, params: &Value) -> String {
     let Value::Object(map) = params else {
         return url.to_string();
@@ -919,8 +958,8 @@ fn add_query_params(url: &str, params: &Value) -> String {
     let mut query_parts: Vec<String> = Vec::new();
 
     for (key, value) in map {
-        // Skip internal params
-        if key == "bucket" || key == "cluster" || key == "location" || key == "name" {
+        // Skip params already used in the URL path
+        if PATH_PARAMS.contains(&key.as_str()) {
             continue;
         }
 
@@ -1006,6 +1045,39 @@ mod tests {
             json!({ "bucket": "b", "cluster": "c", "location": "l", "name": "n", "real": "yes" });
         let result = add_query_params(url, &params);
         assert_eq!(result, "https://example.com/api?real=yes");
+    }
+
+    #[test]
+    fn add_query_params_skips_billing_path_params() {
+        let url = "https://example.com/api";
+        let params = json!({
+            "billingAccount": "billingAccounts/123",
+            "parent": "services/abc",
+            "pageSize": "10"
+        });
+        let result = add_query_params(url, &params);
+        assert_eq!(result, "https://example.com/api?pageSize=10");
+    }
+
+    #[test]
+    fn encode_resource_name_encodes_id() {
+        assert_eq!(
+            encode_resource_name("billingAccounts/0123-ABCD", "billingAccounts").unwrap(),
+            "billingAccounts/0123-ABCD"
+        );
+        assert_eq!(
+            encode_resource_name("services/a b?c", "services").unwrap(),
+            "services/a%20b%3Fc"
+        );
+    }
+
+    #[test]
+    fn encode_resource_name_rejects_traversal_and_wrong_collection() {
+        assert!(encode_resource_name("services/../projects/x", "services").is_err());
+        assert!(encode_resource_name("projects/x", "services").is_err());
+        assert!(encode_resource_name("services/..", "services").is_err());
+        assert!(encode_resource_name("services/", "services").is_err());
+        assert!(encode_resource_name("services", "services").is_err());
     }
 
     #[test]
