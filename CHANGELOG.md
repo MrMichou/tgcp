@@ -7,14 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Standardized CLAUDE.md with proper structure and sections
-- Added comprehensive release process documentation
-- Added CHANGELOG.md for tracking releases
+## [0.5.0] - 2026-10-10
+
+### Security
+- SSH `extra_args`: closed `--ssh-flag` bypass; `-o` options now use an allow-list, `-F`/`-I` rejected
+- `--readonly` now also blocks SSH (`x`/`X`), which can write keys to instance/project metadata
+- Project/zone IDs validated everywhere (CLI, config, `:project`, `:zone`)
+- Path/query parameters percent-encoded; operation polling only follows `https://*.googleapis.com`
+- Log and config files created owner-only (0600, log dir 0700); unparsable config backed up to `config.json.bak`
+- Pagination capped and guarded against repeated page tokens
+- CI: least-privilege workflow permissions, no `${{ inputs }}` interpolation in scripts, audit runs on committed `Cargo.lock`
 
 ### Changed
-- Improved CLAUDE.md organization with table of contents
-- Enhanced Getting Started section with installation instructions
+- reqwest 0.13 (rustls + ring, HTTP/2, gzip); `serde_yaml` replaced by `serde_yaml_ng`; all dependencies updated
+- Windows: browser opened via `rundll32` instead of `cmd /C start`; browser launch no longer blocks the UI
+- Release builds use thin LTO, single codegen unit and stripped binaries
+
+### Performance
+- Screen redrawn only when something changes (idle CPU near zero)
+- Describe view JSON computed once instead of every frame
+- Projects, zones and first page of instances fetched concurrently at startup
+- Fewer allocations and clones in sorting, filtering, JSON extraction and rendering
+
+### Fixed
+- Refresh reloaded the next page instead of the current one
+- Pagination not reset when switching project or zone
+- Aggregated (`zone=all`) lists dropped results after the first page
+- Page numbering started at 0
+
+### Breaking
+- SSH configs using `-o` options outside the allow-list (e.g. `ProxyJump`) are rejected
+- Legacy domain-scoped project IDs (`example.com:proj`) are rejected
 
 ## [0.1.0] - 2024-01-XX
 
@@ -45,5 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration stored in XDG directories
 - Comprehensive logging with tracing
 
-[Unreleased]: https://github.com/mnicolet/tgcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/MrMichou/tgcp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/MrMichou/tgcp/compare/v0.4.4...v0.5.0
 [0.1.0]: https://github.com/mnicolet/tgcp/releases/tag/v0.1.0
