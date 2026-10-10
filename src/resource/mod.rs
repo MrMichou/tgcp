@@ -35,8 +35,9 @@ pub mod sdk_dispatch;
 
 #[allow(unused_imports)]
 pub use fetcher::{
-    enrich_with_metrics, extract_json_value, fetch_multiple_resources, fetch_resources,
-    fetch_resources_concurrent, fetch_resources_paginated, MetricsHistory, ResourceFilter,
+    apply_instance_metrics, extract_json_value, fetch_instance_metrics, fetch_multiple_resources,
+    fetch_resources, fetch_resources_concurrent, fetch_resources_paginated, instance_ids,
+    MetricsHistory, PaginatedResult, ResourceFilter,
 };
 pub use registry::*;
 pub use sdk_dispatch::execute_action;

@@ -54,6 +54,32 @@ impl GcpCredentials {
         })
     }
 
+    /// Credentials that always fail to provide a token, for unit tests that
+    /// must never reach the network
+    #[cfg(test)]
+    pub fn unauthenticated() -> Self {
+        struct NoCredentials;
+
+        #[async_trait::async_trait]
+        impl TokenProvider for NoCredentials {
+            async fn token(
+                &self,
+                _scopes: &[&str],
+            ) -> std::result::Result<Arc<gcp_auth::Token>, gcp_auth::Error> {
+                Err(gcp_auth::Error::Str("no credentials in tests"))
+            }
+
+            async fn project_id(&self) -> std::result::Result<Arc<str>, gcp_auth::Error> {
+                Err(gcp_auth::Error::Str("no credentials in tests"))
+            }
+        }
+
+        Self {
+            provider: Arc::new(NoCredentials),
+            token_cache: Arc::new(Mutex::new(None)),
+        }
+    }
+
     /// Get an access token for API calls
     /// Security: Checks token expiry before returning cached token.
     /// Uses a single Mutex lock scope to prevent concurrent callers from all

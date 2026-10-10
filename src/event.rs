@@ -2,12 +2,11 @@
 //!
 //! Keyboard and event handling for tgcp.
 
-use crate::app::{App, Mode};
-use crate::gcp::client::extract_operation_url;
-use crate::resource::{execute_action, extract_json_value};
+use crate::app::{App, Mode, SshRequest};
+use crate::resource::extract_json_value;
 use crate::shell::{self, ShellResult, SshOptions};
 use anyhow::Result;
-use crossterm::event::{poll, read, Event, KeyCode, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::time::Duration;
 
 // =========================================================================
@@ -20,36 +19,33 @@ const DOUBLE_KEY_TIMEOUT_MS: u64 = 1000;
 /// Number of items to scroll for page up/down
 const PAGE_SCROLL_SIZE: usize = 10;
 
-/// Event poll interval in milliseconds
-const EVENT_POLL_INTERVAL_MS: u64 = 100;
-
-/// Handle events, returns true if app should quit
-pub async fn handle_events(app: &mut App) -> Result<bool> {
-    if poll(Duration::from_millis(EVENT_POLL_INTERVAL_MS))? {
-        let event = read()?;
-        // Any terminal event (key, resize, focus, ...) may change what is on screen
-        app.mark_dirty();
-        if let Event::Key(key) = event {
-            return handle_key_event(app, key.code, key.modifiers).await;
+/// Handle a terminal event, returns true if app should quit
+pub fn handle_event(app: &mut App, event: Event) -> Result<bool> {
+    // Any terminal event (key, resize, focus, ...) may change what is on screen
+    app.mark_dirty();
+    if let Event::Key(key) = event {
+        // Ignore key release/repeat events reported by some terminals (e.g. Windows)
+        if key.kind == KeyEventKind::Press {
+            return handle_key_event(app, key.code, key.modifiers);
         }
     }
     Ok(false)
 }
 
-async fn handle_key_event(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
+fn handle_key_event(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
     // Global quit shortcut
     if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
         return Ok(true);
     }
 
     match app.mode {
-        Mode::Normal => handle_normal_mode(app, code, modifiers).await,
-        Mode::Command => handle_command_mode(app, code, modifiers).await,
+        Mode::Normal => handle_normal_mode(app, code, modifiers),
+        Mode::Command => handle_command_mode(app, code, modifiers),
         Mode::Help => handle_help_mode(app, code),
-        Mode::Confirm => handle_confirm_mode(app, code, modifiers).await,
+        Mode::Confirm => handle_confirm_mode(app, code, modifiers),
         Mode::Warning => handle_warning_mode(app, code),
-        Mode::Projects => handle_projects_mode(app, code, modifiers).await,
-        Mode::Zones => handle_zones_mode(app, code, modifiers).await,
+        Mode::Projects => handle_projects_mode(app, code, modifiers),
+        Mode::Zones => handle_zones_mode(app, code, modifiers),
         Mode::Describe => handle_describe_mode(app, code, modifiers),
         Mode::Notifications => handle_notifications_mode(app, code),
         Mode::ColumnConfig => handle_column_config_mode(app, code),
@@ -57,7 +53,7 @@ async fn handle_key_event(app: &mut App, code: KeyCode, modifiers: KeyModifiers)
     }
 }
 
-async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
+fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
     // Check for double-g (go to top) - keep for vim users but increase timeout
     if code == KeyCode::Char('g') {
         if let Some((KeyCode::Char('g'), time)) = app.last_key_press {
@@ -162,25 +158,25 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
 
         // Pagination
         KeyCode::Char(']') => {
-            app.next_page().await?;
+            app.next_page();
         },
         KeyCode::Char('[') => {
-            app.prev_page().await?;
+            app.prev_page();
         },
 
         // Refresh
         KeyCode::Char('R') => {
             app.reset_pagination();
             app.filter_sort.sort_column = None; // Reset sort on refresh
-            app.refresh_current().await?;
+            app.refresh_current();
         },
 
         // Describe/Enter
         KeyCode::Enter => {
-            app.enter_describe_mode().await;
+            app.enter_describe_mode();
         },
         KeyCode::Char('d') => {
-            app.enter_describe_mode().await;
+            app.enter_describe_mode();
         },
 
         // Filter
@@ -201,12 +197,12 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
         // Back navigation
         KeyCode::Backspace | KeyCode::Left => {
             if app.nav.parent_context.is_some() {
-                app.navigate_back().await?;
+                app.navigate_back()?;
             }
         },
         KeyCode::Char('b') => {
             if app.nav.parent_context.is_some() {
-                app.navigate_back().await?;
+                app.navigate_back()?;
             }
         },
 
@@ -240,7 +236,7 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
                     .find(|a| a.sdk_method.to_lowercase().contains("delete"));
 
                 if let Some(action_def) = delete_action {
-                    handle_action(app, action_def).await?;
+                    handle_action(app, action_def)?;
                 }
             }
         },
@@ -257,7 +253,7 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
                 if let Some(sub_def) = sub {
                     if app.selected_item().is_some() {
                         let key = sub_def.resource_key.clone();
-                        app.navigate_to_sub_resource(&key).await?;
+                        app.navigate_to_sub_resource(&key)?;
                         return Ok(false);
                     }
                 }
@@ -269,7 +265,7 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
                     .find(|a| a.shortcut.as_deref() == Some(&c.to_string()));
 
                 if let Some(action_def) = action {
-                    handle_action(app, action_def).await?;
+                    handle_action(app, action_def)?;
                     return Ok(false);
                 }
             }
@@ -281,7 +277,7 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
     Ok(false)
 }
 
-async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -> Result<()> {
+fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -> Result<()> {
     // In readonly mode, only the console link is allowed: SSH sessions give
     // write access to the instance, so they are blocked like other actions.
     let is_read_only_safe = action_def.shell_action && action_def.sdk_method == "open_console";
@@ -300,7 +296,7 @@ async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -
 
     // If bulk selection, handle bulk action
     if has_bulk_selection && !action_def.shell_action {
-        return handle_bulk_action(app, action_def, selected_ids).await;
+        return handle_bulk_action(app, action_def, selected_ids);
     }
 
     // Single item action (existing behavior)
@@ -316,7 +312,7 @@ async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -
 
     // Handle shell actions (SSH, console, etc.)
     if action_def.shell_action {
-        return handle_shell_action(app, action_def, &resource_id, &item).await;
+        return handle_shell_action(app, action_def, &resource_id, &item);
     }
 
     // Handle actions that need text input from user
@@ -383,49 +379,20 @@ async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -
             app.enter_confirm_mode(pending);
         }
     } else {
-        // Create notification before executing
-        let notification_id = app.create_operation_notification(
-            &action_def.sdk_method,
+        // Execute directly (in the background)
+        app.start_actions(
             &resource.service,
-            &resource_id,
+            &action_def.sdk_method,
+            &[resource_id.as_str()],
+            serde_json::Value::Null,
         );
-
-        // Execute directly
-        let result = execute_action(
-            &resource.service,
-            &action_def.sdk_method,
-            &app.client,
-            &resource_id,
-            &serde_json::Value::Null,
-        )
-        .await;
-
-        match result {
-            Ok(response) => {
-                // Extract operation URL for polling
-                let operation_url = extract_operation_url(&response);
-                app.mark_notification_in_progress(notification_id, operation_url.clone());
-
-                // If no operation URL (immediate completion), mark success
-                if operation_url.is_none() {
-                    app.mark_notification_success(notification_id);
-                }
-
-                app.refresh_current().await?;
-            },
-            Err(e) => {
-                let error_msg = crate::gcp::client::format_gcp_error(&e);
-                app.mark_notification_error(notification_id, error_msg.clone());
-                app.error_message = Some(error_msg);
-            },
-        }
     }
 
     Ok(())
 }
 
 /// Handle bulk action on multiple selected resources
-async fn handle_bulk_action(
+fn handle_bulk_action(
     app: &mut App,
     action_def: &crate::resource::ActionDef,
     resource_ids: Vec<String>,
@@ -469,13 +436,15 @@ async fn handle_bulk_action(
     Ok(())
 }
 
-/// Execute SSH to an instance with proper terminal handling and error reporting
-fn execute_ssh_to_instance(
-    app: &mut App,
-    resource_id: &str,
-    item: &serde_json::Value,
-    force_iap: bool,
-) {
+/// Execute SSH to an instance with proper terminal handling and error reporting.
+/// Called by the main loop for [`App::pending_ssh`] requests.
+pub fn execute_ssh_to_instance(app: &mut App, request: &SshRequest) {
+    let SshRequest {
+        resource_id,
+        item,
+        force_iap,
+    } = request;
+    let force_iap = *force_iap;
     // Get zone from the instance if available
     let zone = extract_json_value(item, "zone_short");
     let zone = if zone != "-" { zone } else { app.zone.clone() };
@@ -511,7 +480,7 @@ fn execute_ssh_to_instance(
 }
 
 /// Handle shell actions like SSH, console URL, etc.
-async fn handle_shell_action(
+fn handle_shell_action(
     app: &mut App,
     action_def: &crate::resource::ActionDef,
     resource_id: &str,
@@ -520,11 +489,14 @@ async fn handle_shell_action(
     let method = action_def.sdk_method.as_str();
 
     match method {
-        "ssh_instance" => {
-            execute_ssh_to_instance(app, resource_id, item, false);
-        },
-        "ssh_instance_iap" => {
-            execute_ssh_to_instance(app, resource_id, item, true);
+        // SSH runs from the main loop, which must release the terminal event
+        // stream first so it doesn't compete with ssh for keyboard input
+        "ssh_instance" | "ssh_instance_iap" => {
+            app.pending_ssh = Some(SshRequest {
+                resource_id: resource_id.to_string(),
+                item: item.clone(),
+                force_iap: method == "ssh_instance_iap",
+            });
         },
         "open_console" => {
             let zone = extract_json_value(item, "zone_short");
@@ -553,17 +525,13 @@ async fn handle_shell_action(
     Ok(())
 }
 
-async fn handle_command_mode(
-    app: &mut App,
-    code: KeyCode,
-    modifiers: KeyModifiers,
-) -> Result<bool> {
+fn handle_command_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
     match code {
         KeyCode::Esc => {
             app.exit_mode();
         },
         KeyCode::Enter => {
-            let should_quit = app.execute_command().await?;
+            let should_quit = app.execute_command()?;
             app.exit_mode();
             return Ok(should_quit);
         },
@@ -599,11 +567,7 @@ fn handle_help_mode(app: &mut App, code: KeyCode) -> Result<bool> {
     Ok(false)
 }
 
-async fn handle_confirm_mode(
-    app: &mut App,
-    code: KeyCode,
-    _modifiers: KeyModifiers,
-) -> Result<bool> {
+fn handle_confirm_mode(app: &mut App, code: KeyCode, _modifiers: KeyModifiers) -> Result<bool> {
     match code {
         KeyCode::Esc | KeyCode::Char('N') => {
             app.exit_mode();
@@ -622,105 +586,18 @@ async fn handle_confirm_mode(
             if let Some(pending) = app.pending_action.take() {
                 if pending.selected_yes || code == KeyCode::Char('y') || code == KeyCode::Char('Y')
                 {
-                    // Check if this is a bulk action (multiple resource IDs separated by newline)
+                    // Bulk actions store multiple resource IDs separated by newlines
                     let resource_ids: Vec<&str> = pending.resource_id.split('\n').collect();
-                    let is_bulk = resource_ids.len() > 1;
-
-                    if is_bulk {
-                        // Execute bulk action
-                        let mut success_count = 0;
-                        let mut error_count = 0;
-                        let total = resource_ids.len();
-
-                        for resource_id in resource_ids {
-                            // Create notification for each resource
-                            let notification_id = app.create_operation_notification(
-                                &pending.sdk_method,
-                                &pending.service,
-                                resource_id,
-                            );
-
-                            // Execute the action
-                            let result = execute_action(
-                                &pending.service,
-                                &pending.sdk_method,
-                                &app.client,
-                                resource_id,
-                                &pending.params,
-                            )
-                            .await;
-
-                            match result {
-                                Ok(response) => {
-                                    let operation_url = extract_operation_url(&response);
-                                    app.mark_notification_in_progress(
-                                        notification_id,
-                                        operation_url.clone(),
-                                    );
-                                    if operation_url.is_none() {
-                                        app.mark_notification_success(notification_id);
-                                    }
-                                    success_count += 1;
-                                },
-                                Err(e) => {
-                                    let error_msg = crate::gcp::client::format_gcp_error(&e);
-                                    app.mark_notification_error(notification_id, error_msg);
-                                    error_count += 1;
-                                },
-                            }
-                        }
-
-                        // Show summary message
-                        if error_count > 0 {
-                            app.error_message = Some(format!(
-                                "Bulk action: {} succeeded, {} failed of {}",
-                                success_count, error_count, total
-                            ));
-                        }
-
+                    if resource_ids.len() > 1 {
                         // Clear selection after bulk action
                         app.clear_selection();
-
-                        // Refresh view
-                        app.refresh_current().await?;
-                    } else {
-                        // Single item action (existing behavior)
-                        let notification_id = app.create_operation_notification(
-                            &pending.sdk_method,
-                            &pending.service,
-                            &pending.resource_id,
-                        );
-
-                        let result = execute_action(
-                            &pending.service,
-                            &pending.sdk_method,
-                            &app.client,
-                            &pending.resource_id,
-                            &pending.params,
-                        )
-                        .await;
-
-                        match result {
-                            Ok(response) => {
-                                let operation_url = extract_operation_url(&response);
-                                app.mark_notification_in_progress(
-                                    notification_id,
-                                    operation_url.clone(),
-                                );
-
-                                if operation_url.is_none() {
-                                    app.mark_notification_success(notification_id);
-                                }
-
-                                app.refresh_current().await?;
-                            },
-                            Err(e) => {
-                                let error_msg = crate::gcp::client::format_gcp_error(&e);
-                                app.mark_notification_error(notification_id, error_msg.clone());
-                                app.error_message = Some(error_msg);
-                            },
-                        }
                     }
+                    app.start_actions(
+                        &pending.service,
+                        &pending.sdk_method,
+                        &resource_ids,
+                        pending.params,
+                    );
                 }
             }
             app.exit_mode();
@@ -801,7 +678,7 @@ enum SelectorType {
 }
 
 /// Generic handler for selector modes (projects/zones) to avoid code duplication
-async fn handle_selector_mode(
+fn handle_selector_mode(
     app: &mut App,
     code: KeyCode,
     modifiers: KeyModifiers,
@@ -812,8 +689,8 @@ async fn handle_selector_mode(
             app.exit_mode();
         },
         KeyCode::Enter => match selector_type {
-            SelectorType::Projects => app.select_project().await?,
-            SelectorType::Zones => app.select_zone().await?,
+            SelectorType::Projects => app.select_project()?,
+            SelectorType::Zones => app.select_zone()?,
         },
         KeyCode::Char('j') | KeyCode::Down => {
             app.next();
@@ -858,16 +735,12 @@ async fn handle_selector_mode(
     Ok(false)
 }
 
-async fn handle_projects_mode(
-    app: &mut App,
-    code: KeyCode,
-    modifiers: KeyModifiers,
-) -> Result<bool> {
-    handle_selector_mode(app, code, modifiers, SelectorType::Projects).await
+fn handle_projects_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
+    handle_selector_mode(app, code, modifiers, SelectorType::Projects)
 }
 
-async fn handle_zones_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
-    handle_selector_mode(app, code, modifiers, SelectorType::Zones).await
+fn handle_zones_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {
+    handle_selector_mode(app, code, modifiers, SelectorType::Zones)
 }
 
 fn handle_describe_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<bool> {

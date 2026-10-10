@@ -5,6 +5,7 @@ mod gcp;
 mod notification;
 mod resource;
 mod shell;
+mod task;
 mod theme;
 mod ui;
 
@@ -20,10 +21,14 @@ use app::App;
 use clap::{Parser, ValueEnum};
 use config::Config;
 use crossterm::{
-    event::{poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{
+        poll, read, DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode,
+        KeyModifiers,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use futures::StreamExt;
 use gcp::auth;
 use ratatui::prelude::*;
 use std::io;
@@ -376,10 +381,24 @@ fn check_abort() -> Result<bool> {
     Ok(false)
 }
 
+/// Interval of the UI tick, used for time-based UI (toasts, spinners) and
+/// for scheduling operation polls
+const TICK_INTERVAL_MS: u64 = 200;
+
 async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()>
 where
     B::Error: Send + Sync + 'static,
 {
+    let mut task_results = app
+        .take_task_receiver()
+        .ok_or_else(|| anyhow::anyhow!("Task receiver already taken"))?;
+    let mut events = EventStream::new();
+    let mut tick = tokio::time::interval(Duration::from_millis(TICK_INTERVAL_MS));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    // The startup page is loaded without metrics; fetch them now
+    app.start_metrics_fetch();
+
     // Track toast visibility so the frame where a toast expires is redrawn
     let mut toast_was_visible = false;
 
@@ -391,18 +410,37 @@ where
         }
         toast_was_visible = toast_visible;
 
-        if event::handle_events(app).await? {
-            return Ok(());
+        // Network calls run in background tasks: wait for whichever comes
+        // first between user input, a task result and the UI tick
+        tokio::select! {
+            event = events.next() => match event {
+                Some(Ok(event)) => {
+                    if event::handle_event(app, event)? {
+                        return Ok(());
+                    }
+                },
+                Some(Err(e)) => return Err(e.into()),
+                None => return Ok(()),
+            },
+            Some(result) = task_results.recv() => app.handle_task_result(result),
+            _ = tick.tick() => {},
         }
 
-        // Poll pending operations for notification updates
-        if let Err(e) = app.poll_pending_operations().await {
-            tracing::warn!("Failed to poll pending operations: {}", e);
+        if let Some(request) = app.pending_ssh.take() {
+            // Release the event stream so it doesn't read keys meant for ssh
+            drop(events);
+            event::execute_ssh_to_instance(app, &request);
+            events = EventStream::new();
+            terminal.clear()?;
+            app.mark_dirty();
         }
+
+        // Start polling pending operations that are due
+        app.poll_pending_operations();
 
         // Auto-refresh (disabled by default)
-        if app.needs_refresh() {
-            let _ = app.refresh_current().await;
+        if app.needs_refresh() && !app.loading {
+            app.refresh_current();
         }
     }
 }

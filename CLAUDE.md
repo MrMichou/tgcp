@@ -54,6 +54,7 @@ src/
 ├── app.rs            # Central application state (App struct)
 ├── config.rs         # Persistent configuration management
 ├── event.rs          # Keyboard/event handling
+├── task.rs           # Background task results (fetches, actions, polling)
 ├── gcp/              # GCP API interaction
 │   ├── mod.rs
 │   ├── auth.rs       # Authentication (gcloud credentials)
@@ -95,7 +96,7 @@ src/
 
 4. **Hierarchical Navigation**: Resources can have sub-resources (e.g., VM → Disks, Bucket → Objects) with breadcrumb navigation.
 
-5. **Async Everything**: All GCP API calls are async using tokio runtime.
+5. **Non-blocking UI**: Key handlers never await network calls. Fetches, actions and operation polls run in spawned tokio tasks that report a `TaskResult` (`src/task.rs`) over a channel; the main loop `tokio::select!`s over terminal events (crossterm `EventStream`), task results and a UI tick, and applies results with `App::handle_task_result`. Each fetch bumps a generation counter so results of superseded fetches are dropped. SSH sessions run from the main loop after the event stream is released (`App::pending_ssh`).
 
 ---
 
