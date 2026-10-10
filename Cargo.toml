@@ -22,6 +22,7 @@ gcp_auth = "0.12"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "http2", "gzip", "charset"] }
 # Explicit ring crypto provider (avoids aws-lc-rs, which needs cmake for cross builds)
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+url = "2.5"
 urlencoding = "2.1"
 
 # Async runtime
