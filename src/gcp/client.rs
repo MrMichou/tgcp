@@ -59,9 +59,9 @@ impl GcpClient {
 
     /// Switch to a different project
     pub async fn switch_project(&mut self, project_id: &str) -> Result<()> {
+        // ADC access tokens are not bound to a project, so the cached token
+        // stays valid across project switches; no forced refresh needed.
         self.project_id = project_id.to_string();
-        // Refresh token in case of project-specific credentials
-        self.credentials.refresh_token().await?;
         Ok(())
     }
 

@@ -102,15 +102,6 @@ impl GcpCredentials {
 
         Ok(token_str)
     }
-
-    /// Force refresh the token
-    pub async fn refresh_token(&self) -> Result<String> {
-        {
-            let mut cache = self.token_cache.lock().await;
-            *cache = None;
-        }
-        self.get_token().await
-    }
 }
 
 /// Get the gcloud configuration directory

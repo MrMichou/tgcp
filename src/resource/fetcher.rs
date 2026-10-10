@@ -313,38 +313,39 @@ pub async fn fetch_resources_paginated(
     )
     .await?;
 
-    // Extract items from response path
-    let items = extract_items(&response, &resource_def.response_path, resource_def);
-
     // Get next page token
     let next_token = response
         .get("nextPageToken")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
+    // Extract items from response path (takes ownership to avoid cloning the array)
+    let items = extract_items(response, &resource_def.response_path, resource_def);
+
     Ok(PaginatedResult { items, next_token })
 }
 
 /// Extract items from response using the response_path
-fn extract_items(response: &Value, path: &str, resource_def: &ResourceDef) -> Vec<Value> {
+fn extract_items(mut response: Value, path: &str, resource_def: &ResourceDef) -> Vec<Value> {
     let raw_items = if path.is_empty() {
-        if let Some(arr) = response.as_array() {
-            arr.clone()
-        } else {
-            vec![]
+        match response {
+            Value::Array(arr) => arr,
+            _ => vec![],
         }
     } else {
-        let parts: Vec<&str> = path.split('.').collect();
-        let mut current = response;
+        let mut current = &mut response;
 
-        for part in parts {
-            current = match current.get(part) {
+        for part in path.split('.') {
+            current = match current.get_mut(part) {
                 Some(v) => v,
                 None => return vec![],
             };
         }
 
-        current.as_array().cloned().unwrap_or_default()
+        match current.take() {
+            Value::Array(arr) => arr,
+            _ => vec![],
+        }
     };
 
     // Post-process items to add computed fields
@@ -654,21 +655,21 @@ fn post_process_item(mut item: Value, resource_def: &ResourceDef) -> Value {
 
         // VM Instance specific fields
         // Count attached disks and summarize types
-        if let Some(disks) = map.get("disks").and_then(|v| v.as_array()).cloned() {
+        // Count in a borrowed scope so the map can be mutated afterwards without cloning
+        let disk_counts = map.get("disks").and_then(|v| v.as_array()).map(|disks| {
+            let local_ssd = disks
+                .iter()
+                .filter(|disk| disk.get("type").and_then(|v| v.as_str()) == Some("SCRATCH"))
+                .count();
+            (disks.len(), disks.len() - local_ssd, local_ssd)
+        });
+        if let Some((disks_len, persistent_count, local_ssd_count)) = disk_counts {
             map.insert(
                 "disks_count".to_string(),
-                Value::String(disks.len().to_string()),
+                Value::String(disks_len.to_string()),
             );
 
             // Build disk summary for machine type change warnings
-            let mut persistent_count = 0u32;
-            let mut local_ssd_count = 0u32;
-            for disk in &disks {
-                match disk.get("type").and_then(|v| v.as_str()).unwrap_or("") {
-                    "SCRATCH" => local_ssd_count += 1,
-                    _ => persistent_count += 1,
-                }
-            }
             let mut parts = Vec::new();
             if persistent_count > 0 {
                 parts.push(format!("{} persistent", persistent_count));
@@ -837,11 +838,10 @@ pub async fn enrich_with_metrics(
         sdk_dispatch::invoke_sdk("monitoring", "get_instance_metrics", client, &params).await;
 
     let metrics_map = match metrics_result {
-        Ok(data) => data
-            .get("metrics")
-            .and_then(|v| v.as_object())
-            .cloned()
-            .unwrap_or_default(),
+        Ok(mut data) => match data.get_mut("metrics").map(Value::take) {
+            Some(Value::Object(map)) => map,
+            _ => serde_json::Map::new(),
+        },
         Err(e) => {
             tracing::debug!("Failed to fetch monitoring metrics: {}", e);
             return Ok(()); // Don't fail the whole operation, just skip metrics
@@ -1000,24 +1000,21 @@ fn format_bytes_per_sec(bytes: f64) -> String {
 }
 
 /// Extract a value from JSON using a dot-notation path
+///
+/// Walks the path by reference and only allocates the final display string.
+/// Numeric path segments are treated as array indices.
 pub fn extract_json_value(item: &Value, path: &str) -> String {
-    let parts: Vec<&str> = path.split('.').collect();
-    let mut current = item;
-
-    for part in parts {
+    let resolved = path.split('.').try_fold(item, |current, part| {
         // Handle array index
-        if let Ok(idx) = part.parse::<usize>() {
-            current = match current.get(idx) {
-                Some(v) => v,
-                None => return "-".to_string(),
-            };
-        } else {
-            current = match current.get(part) {
-                Some(v) => v,
-                None => return "-".to_string(),
-            };
+        match part.parse::<usize>() {
+            Ok(idx) => current.get(idx),
+            Err(_) => current.get(part),
         }
-    }
+    });
+
+    let Some(current) = resolved else {
+        return "-".to_string();
+    };
 
     match current {
         Value::String(s) => s.clone(),
@@ -1126,6 +1123,33 @@ mod tests {
     fn test_extract_json_value_object_value() {
         let item = json!({"meta": {"key": "val"}});
         assert_eq!(extract_json_value(&item, "meta"), "[object]");
+    }
+
+    #[test]
+    fn test_extract_json_value_index_into_nested_array_object() {
+        let item = json!({"nics": [{"ip": "10.0.0.1"}, {"ip": "10.0.0.2"}]});
+        assert_eq!(extract_json_value(&item, "nics.1.ip"), "10.0.0.2");
+        assert_eq!(extract_json_value(&item, "nics.2.ip"), "-");
+    }
+
+    #[test]
+    fn test_extract_json_value_numeric_segment_on_object_is_index() {
+        // Numeric segments are always treated as array indices, so they do
+        // not match object keys that happen to be numeric.
+        let item = json!({"0": "zero"});
+        assert_eq!(extract_json_value(&item, "0"), "-");
+    }
+
+    #[test]
+    fn test_extract_json_value_top_level_array() {
+        let item = json!(["first", "second"]);
+        assert_eq!(extract_json_value(&item, "1"), "second");
+    }
+
+    #[test]
+    fn test_extract_json_value_through_scalar() {
+        let item = json!({"name": "vm"});
+        assert_eq!(extract_json_value(&item, "name.inner"), "-");
     }
 
     // ── extract_short_name ──────────────────────────────────────────

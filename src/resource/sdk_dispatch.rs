@@ -554,8 +554,7 @@ fn enrich_budgets(mut response: Value) -> Value {
 }
 
 /// Enrich project billing info with computed display fields
-fn enrich_project_billing_info(response: Value) -> Value {
-    let mut result = response.clone();
+fn enrich_project_billing_info(mut result: Value) -> Value {
     if let Some(obj) = result.as_object_mut() {
         // billingAccountName_short
         if let Some(account) = obj.get("billingAccountName").and_then(|v| v.as_str()) {
@@ -714,10 +713,10 @@ async fn invoke_monitoring(method: &str, client: &GcpClient, params: &Value) -> 
     match method {
         "get_instance_metrics" => {
             // Get list of instance IDs from params
-            let instance_ids = params
+            let instance_ids: &[Value] = params
                 .get("instance_ids")
                 .and_then(|v| v.as_array())
-                .cloned()
+                .map(Vec::as_slice)
                 .unwrap_or_default();
 
             if instance_ids.is_empty() {
@@ -990,31 +989,37 @@ fn add_query_params(url: &str, params: &Value) -> String {
 
 /// Flatten an aggregated API response into a standard list response.
 /// Aggregated responses have format: { "items": { "zones/us-central1-a": { "instances": [...] }, ... } }
-/// We flatten to: { "items": [...all instances...] }
-fn flatten_aggregated_response(response: Value) -> Value {
-    let Some(items) = response.get("items").and_then(|v| v.as_object()) else {
-        return serde_json::json!({ "items": [] });
-    };
+/// We flatten to: { "items": [...all instances...], "nextPageToken": "..." }
+///
+/// The `nextPageToken` (if any) is preserved so aggregated lists can be paginated.
+fn flatten_aggregated_response(mut response: Value) -> Value {
+    let next_page_token = response.get_mut("nextPageToken").map(Value::take);
 
     let mut all_items: Vec<Value> = Vec::new();
 
-    for (_zone_key, zone_data) in items {
-        // Each zone entry may have "instances", "disks", etc.
-        // Look for any array field that contains the actual resources
-        if let Some(obj) = zone_data.as_object() {
-            for (key, value) in obj {
-                // Skip warning field and other metadata
-                if key == "warning" {
-                    continue;
-                }
-                if let Some(arr) = value.as_array() {
-                    all_items.extend(arr.iter().cloned());
+    if let Some(Value::Object(items)) = response.get_mut("items").map(Value::take) {
+        for (_zone_key, zone_data) in items {
+            // Each zone entry may have "instances", "disks", etc.
+            // Look for any array field that contains the actual resources
+            if let Value::Object(obj) = zone_data {
+                for (key, value) in obj {
+                    // Skip warning field and other metadata
+                    if key == "warning" {
+                        continue;
+                    }
+                    if let Value::Array(arr) = value {
+                        all_items.extend(arr);
+                    }
                 }
             }
         }
     }
 
-    serde_json::json!({ "items": all_items })
+    let mut result = serde_json::json!({ "items": all_items });
+    if let Some(token) = next_page_token.filter(|t| !t.is_null()) {
+        result["nextPageToken"] = token;
+    }
+    result
 }
 
 #[cfg(test)]
@@ -1093,6 +1098,44 @@ mod tests {
         let url = "https://example.com/api";
         let result = add_query_params(url, &json!("not an object"));
         assert_eq!(result, url);
+    }
+
+    #[test]
+    fn flatten_aggregated_response_merges_zones_and_skips_warnings() {
+        let response = json!({
+            "items": {
+                "zones/a": { "instances": [{ "name": "vm-1" }, { "name": "vm-2" }] },
+                "zones/b": { "warning": { "code": "NO_RESULTS_ON_PAGE" } },
+                "zones/c": { "instances": [{ "name": "vm-3" }] }
+            }
+        });
+        let result = flatten_aggregated_response(response);
+        let names: Vec<&str> = result["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, vec!["vm-1", "vm-2", "vm-3"]);
+        assert!(result.get("nextPageToken").is_none());
+    }
+
+    #[test]
+    fn flatten_aggregated_response_preserves_next_page_token() {
+        let response = json!({
+            "items": { "zones/a": { "instances": [{ "name": "vm-1" }] } },
+            "nextPageToken": "tok-2"
+        });
+        let result = flatten_aggregated_response(response);
+        assert_eq!(result["nextPageToken"], "tok-2");
+        assert_eq!(result["items"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn flatten_aggregated_response_without_items() {
+        let result = flatten_aggregated_response(json!({ "nextPageToken": "tok" }));
+        assert_eq!(result["items"], json!([]));
+        assert_eq!(result["nextPageToken"], "tok");
     }
 
     #[test]
