@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-10
+
+### Fixed
+- Docker image: build with Rust 1.98 (required by updated dependencies)
+- Docker image shipped a placeholder no-op binary because cargo skipped the rebuild
+- Docker image now includes a CA bundle for TLS verification
+
 ## [0.5.0] - 2026-10-10
 
 ### Security
@@ -68,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration stored in XDG directories
 - Comprehensive logging with tracing
 
-[Unreleased]: https://github.com/MrMichou/tgcp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/MrMichou/tgcp/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/MrMichou/tgcp/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/MrMichou/tgcp/compare/v0.4.4...v0.5.0
 [0.1.0]: https://github.com/mnicolet/tgcp/releases/tag/v0.1.0
