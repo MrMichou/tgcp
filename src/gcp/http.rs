@@ -72,6 +72,12 @@ fn sanitize_for_log(body: &str) -> String {
     truncated.replace(|c: char| !c.is_ascii_graphic() && c != ' ', "")
 }
 
+/// Install ring as the process-wide rustls crypto provider.
+/// reqwest is built without a provider; this is a no-op if one is already installed.
+pub fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 /// HTTP client wrapper for GCP API calls
 #[derive(Clone)]
 pub struct GcpHttpClient {
@@ -81,6 +87,7 @@ pub struct GcpHttpClient {
 impl GcpHttpClient {
     /// Create a new HTTP client
     pub fn new() -> Result<Self> {
+        install_crypto_provider();
         let client = Client::builder()
             .user_agent(format!("tgcp/{}", env!("CARGO_PKG_VERSION")))
             .connect_timeout(Duration::from_secs(10))

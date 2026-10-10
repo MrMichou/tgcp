@@ -7,6 +7,13 @@ use serde_json::json;
 use wiremock::matchers::{bearer_token, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+/// Build a reqwest client with the ring crypto provider installed
+/// (reqwest is built without a default provider)
+fn client() -> reqwest::Client {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reqwest::Client::new()
+}
+
 /// Test module for HTTP client integration tests
 mod http_client_tests {
     use super::*;
@@ -32,7 +39,7 @@ mod http_client_tests {
             .mount(&server)
             .await;
 
-        let client = reqwest::Client::new();
+        let client = client();
         let url = format!(
             "{}/compute/v1/projects/test-project/zones/us-central1-a/instances",
             server.uri()
@@ -68,7 +75,7 @@ mod http_client_tests {
             .mount(&server)
             .await;
 
-        let client = reqwest::Client::new();
+        let client = client();
         let url = format!(
             "{}/compute/v1/projects/test-project/instances",
             server.uri()
@@ -99,7 +106,7 @@ mod http_client_tests {
             .mount(&server)
             .await;
 
-        let client = reqwest::Client::new();
+        let client = client();
         let url = format!(
             "{}/compute/v1/projects/restricted-project/instances",
             server.uri()
@@ -133,7 +140,7 @@ mod http_client_tests {
             .mount(&server)
             .await;
 
-        let client = reqwest::Client::new();
+        let client = client();
         let url = format!(
             "{}/compute/v1/projects/test-project/zones/invalid-zone/instances",
             server.uri()
@@ -170,7 +177,7 @@ mod http_client_tests {
             .mount(&server)
             .await;
 
-        let client = reqwest::Client::new();
+        let client = client();
         let url = format!(
             "{}/compute/v1/projects/test-project/zones/us-central1-a/instances/my-vm/start",
             server.uri()
@@ -210,7 +217,7 @@ mod http_client_tests {
             .mount(&server)
             .await;
 
-        let client = reqwest::Client::new();
+        let client = client();
         let url = format!(
             "{}/compute/v1/projects/test-project/zones/us-central1-a/instances/my-vm",
             server.uri()
@@ -240,7 +247,7 @@ mod http_client_tests {
             .mount(&server)
             .await;
 
-        let client = reqwest::Client::new();
+        let client = client();
         let url = format!("{}/some/endpoint", server.uri());
 
         let response = client
@@ -271,7 +278,7 @@ mod http_client_tests {
             .mount(&server)
             .await;
 
-        let client = reqwest::Client::new();
+        let client = client();
         let url = format!("{}/rate-limited", server.uri());
 
         let response = client
@@ -314,7 +321,7 @@ mod http_client_tests {
             .mount(&server)
             .await;
 
-        let client = reqwest::Client::new();
+        let client = client();
         let url = format!(
             "{}/compute/v1/projects/test-project/instances",
             server.uri()
