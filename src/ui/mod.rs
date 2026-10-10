@@ -171,10 +171,21 @@ fn render_filter_bar(f: &mut Frame, app: &App, area: Rect) {
 /// Render dynamic table based on current resource definition
 /// Uses virtual scrolling for performance with large datasets
 fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
-    let theme = app.theme_manager.current().clone();
+    // Copy only the colors we need (the theme is borrowed from `app`, which is
+    // mutated below, so avoid cloning the whole theme every frame).
+    let (error_color, base_border_color, accent_color, header_color, selected_bg, selected_fg) = {
+        let theme = app.theme_manager.current();
+        (
+            Theme::color(theme.base.error),
+            Theme::color(theme.base.border),
+            Theme::color(theme.base.accent),
+            Theme::color(theme.table.header),
+            Theme::color(theme.table.selected_bg),
+            Theme::color(theme.table.selected_fg),
+        )
+    };
     let Some(resource) = app.current_resource() else {
-        let msg = Paragraph::new("Unknown resource")
-            .style(Style::default().fg(Theme::color(theme.base.error)));
+        let msg = Paragraph::new("Unknown resource").style(Style::default().fg(error_color));
         f.render_widget(msg, area);
         return;
     };
@@ -235,7 +246,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
     let border_color = if app.selection.visual_mode {
         Color::Magenta
     } else {
-        Theme::color(theme.base.border)
+        base_border_color
     };
 
     let block = Block::default()
@@ -244,7 +255,7 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
         .title(Span::styled(
             title,
             Style::default()
-                .fg(Theme::color(theme.base.accent))
+                .fg(accent_color)
                 .add_modifier(Modifier::BOLD),
         ))
         .title_alignment(Alignment::Center);
@@ -281,13 +292,12 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
         .columns
         .iter()
         .enumerate()
-        .filter(|(_, col)| !hidden_columns.contains(&col.header))
+        .filter(|(_, col)| !hidden_columns.is_some_and(|h| h.contains(&col.header)))
         .collect();
 
     // Build header from column definitions with selection column and sort indicators
     let has_selection = app.selection_count() > 0 || app.selection.visual_mode;
 
-    let header_color = Theme::color(theme.table.header);
     let header_cells: Vec<Cell> = if has_selection {
         // Add selection column header
         let mut cells = vec![Cell::from(" ").style(
@@ -412,8 +422,8 @@ fn render_dynamic_table(f: &mut Frame, app: &mut App, area: Rect) {
 
     let table = Table::new(rows, widths).header(header).row_highlight_style(
         Style::default()
-            .bg(Theme::color(theme.table.selected_bg))
-            .fg(Theme::color(theme.table.selected_fg))
+            .bg(selected_bg)
+            .fg(selected_fg)
             .add_modifier(Modifier::BOLD),
     );
 
@@ -481,12 +491,15 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 }
 
 fn render_describe_view(f: &mut Frame, app: &App, area: Rect) {
-    let theme = app.theme_manager.current().clone();
-    let json = app
-        .selected_item_json()
-        .unwrap_or_else(|| "No item selected".to_string());
+    let theme = app.theme_manager.current();
 
-    let all_lines: Vec<&str> = json.lines().collect();
+    // Pretty-printed JSON is cached in DescribeState when entering describe mode
+    let no_item = ["No item selected".to_string()];
+    let all_lines: &[String] = if app.describe.lines.is_empty() {
+        &no_item
+    } else {
+        &app.describe.lines
+    };
     let total_lines = all_lines.len();
 
     let title = if let Some(resource) = app.current_resource() {

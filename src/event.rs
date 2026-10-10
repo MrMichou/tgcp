@@ -26,7 +26,10 @@ const EVENT_POLL_INTERVAL_MS: u64 = 100;
 /// Handle events, returns true if app should quit
 pub async fn handle_events(app: &mut App) -> Result<bool> {
     if poll(Duration::from_millis(EVENT_POLL_INTERVAL_MS))? {
-        if let Event::Key(key) = read()? {
+        let event = read()?;
+        // Any terminal event (key, resize, focus, ...) may change what is on screen
+        app.mark_dirty();
+        if let Event::Key(key) = event {
             return handle_key_event(app, key.code, key.modifiers).await;
         }
     }
@@ -873,26 +876,26 @@ fn handle_describe_mode(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -
             app.exit_mode();
         },
         KeyCode::Char('j') | KeyCode::Down => {
-            app.describe.scroll = app.describe.scroll.saturating_add(1);
+            app.describe.scroll_down(1);
         },
         KeyCode::Char('k') | KeyCode::Up => {
-            app.describe.scroll = app.describe.scroll.saturating_sub(1);
+            app.describe.scroll_up(1);
         },
         KeyCode::PageDown => {
-            app.describe.scroll = app.describe.scroll.saturating_add(10);
+            app.describe.scroll_down(PAGE_SCROLL_SIZE);
         },
         KeyCode::PageUp => {
-            app.describe.scroll = app.describe.scroll.saturating_sub(10);
+            app.describe.scroll_up(PAGE_SCROLL_SIZE);
         },
         KeyCode::Char('d') => {
             if modifiers.contains(KeyModifiers::CONTROL) {
-                app.describe.scroll = app.describe.scroll.saturating_add(10);
+                app.describe.scroll_down(PAGE_SCROLL_SIZE);
             } else {
                 app.exit_mode();
             }
         },
         KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-            app.describe.scroll = app.describe.scroll.saturating_sub(10);
+            app.describe.scroll_up(PAGE_SCROLL_SIZE);
         },
         KeyCode::Char('g') | KeyCode::Home => {
             app.describe.scroll = 0;

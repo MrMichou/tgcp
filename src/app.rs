@@ -95,12 +95,40 @@ pub struct ParentContext {
 }
 
 /// Pagination state
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PaginationState {
+    /// Token for the next page, as returned by the last fetch
     pub next_token: Option<String>,
+    /// Token used to fetch the currently displayed page (None for the first page)
+    pub current_token: Option<String>,
+    /// Tokens of previously visited pages, used to navigate back
     pub token_stack: Vec<Option<String>>,
+    /// Current page number (1-based)
     pub current_page: usize,
     pub has_more: bool,
+}
+
+impl Default for PaginationState {
+    fn default() -> Self {
+        Self {
+            next_token: None,
+            current_token: None,
+            token_stack: Vec::new(),
+            current_page: 1,
+            has_more: false,
+        }
+    }
+}
+
+impl PaginationState {
+    /// Create pagination state for a freshly fetched first page
+    pub fn first_page(next_token: Option<String>) -> Self {
+        Self {
+            has_more: next_token.is_some(),
+            next_token,
+            ..Default::default()
+        }
+    }
 }
 
 // =========================================================================
@@ -314,9 +342,100 @@ pub struct DescribeState {
     pub scroll: usize,
     /// Cached data for describe view
     pub data: Option<Value>,
+    /// Pretty-printed JSON lines of `data`, computed once when data is set
+    pub lines: Vec<String>,
     /// Last computed visible lines from render (updated each frame).
     /// Uses Cell for interior mutability so render (&App) can update it.
     pub visible_lines: std::cell::Cell<usize>,
+}
+
+impl DescribeState {
+    /// Set the described item and rebuild the cached pretty-printed lines
+    pub fn set_data(&mut self, data: Option<Value>) {
+        self.lines = data
+            .as_ref()
+            .map(|d| {
+                serde_json::to_string_pretty(d)
+                    .unwrap_or_default()
+                    .lines()
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.data = data;
+        self.clamp_scroll();
+    }
+
+    /// Clear the described item and its cached lines
+    pub fn clear(&mut self) {
+        self.set_data(None);
+    }
+
+    /// Total number of lines in the cached describe output
+    pub fn line_count(&self) -> usize {
+        self.lines.len()
+    }
+
+    /// Maximum scroll offset given the last rendered viewport height
+    pub fn max_scroll(&self) -> usize {
+        self.line_count().saturating_sub(self.visible_lines.get())
+    }
+
+    /// Clamp scroll position to the valid range
+    pub fn clamp_scroll(&mut self) {
+        self.scroll = self.scroll.min(self.max_scroll());
+    }
+
+    /// Scroll down by `amount` lines (clamped to the end of the content)
+    pub fn scroll_down(&mut self, amount: usize) {
+        self.scroll = self.scroll.saturating_add(amount).min(self.max_scroll());
+    }
+
+    /// Scroll up by `amount` lines
+    pub fn scroll_up(&mut self, amount: usize) {
+        self.scroll = self.scroll.saturating_sub(amount);
+    }
+}
+
+/// Pre-computed sort key for a column value.
+///
+/// Values that parse as numbers compare numerically when both sides are
+/// numeric; otherwise the raw strings are compared.
+struct SortKey {
+    text: String,
+    number: Option<f64>,
+}
+
+impl SortKey {
+    fn new(text: String) -> Self {
+        let number = text.parse::<f64>().ok();
+        Self { text, number }
+    }
+
+    fn compare(&self, other: &Self) -> std::cmp::Ordering {
+        match (self.number, other.number) {
+            (Some(a), Some(b)) => a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal),
+            _ => self.text.cmp(&other.text),
+        }
+    }
+}
+
+/// Case-insensitive substring check against an already-lowercased needle.
+///
+/// Equivalent to `haystack.to_lowercase().contains(needle_lower)`, but avoids
+/// allocating for the common all-ASCII case.
+fn contains_ignore_case(haystack: &str, needle_lower: &str) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    if haystack.is_ascii() && needle_lower.is_ascii() {
+        let needle = needle_lower.as_bytes();
+        return haystack
+            .as_bytes()
+            .windows(needle.len())
+            .any(|window| window.eq_ignore_ascii_case(needle));
+    }
+    haystack.to_lowercase().contains(needle_lower)
 }
 
 /// Main application state
@@ -390,6 +509,9 @@ pub struct App {
 
     // Cached command list (rebuilt only when aliases change)
     cached_commands: Option<Vec<String>>,
+
+    /// Whether the UI needs to be redrawn on the next loop iteration
+    pub dirty: bool,
 }
 
 impl App {
@@ -402,6 +524,7 @@ impl App {
         available_projects: Vec<String>,
         available_zones: Vec<String>,
         initial_items: Vec<Value>,
+        initial_next_token: Option<String>,
         config: Config,
         readonly: bool,
     ) -> Self {
@@ -466,14 +589,35 @@ impl App {
             last_key_press: None,
             readonly,
             warning_message: None,
-            pagination: PaginationState::default(),
+            pagination: PaginationState::first_page(initial_next_token),
             theme_manager,
             notification_manager,
             notifications_selected: 0,
             metrics_history: MetricsHistory::default(),
             column_config_state: None,
             cached_commands: None,
+            dirty: true,
         }
+    }
+
+    /// Request a redraw on the next loop iteration
+    #[inline]
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    /// Whether the next loop iteration should redraw the UI.
+    ///
+    /// Besides explicit dirty marking, anything time-dependent in the UI
+    /// (loading indicator, toasts that expire, in-progress operation counters,
+    /// "time ago" in the notifications panel) keeps the UI redrawing.
+    pub fn needs_redraw(&self) -> bool {
+        self.dirty
+            || self.loading
+            || self.mode == Mode::Notifications
+            || !self.notification_manager.pending_operations.is_empty()
+            || self.notification_manager.in_progress_count() > 0
+            || self.notification_manager.current_toast().is_some()
     }
 
     // =========================================================================
@@ -544,8 +688,9 @@ impl App {
     // Data Fetching
     // =========================================================================
 
+    /// Re-fetch the currently displayed page
     pub async fn refresh_current(&mut self) -> Result<()> {
-        self.fetch_page(self.pagination.next_token.clone()).await
+        self.fetch_page(self.pagination.current_token.clone()).await
     }
 
     async fn fetch_page(&mut self, page_token: Option<String>) -> Result<()> {
@@ -585,6 +730,7 @@ impl App {
                 }
 
                 self.apply_filter();
+                self.refresh_describe_data();
 
                 self.pagination.has_more = result.next_token.is_some();
                 self.pagination.next_token = result.next_token;
@@ -606,6 +752,7 @@ impl App {
 
         self.loading = false;
         self.mark_refreshed();
+        self.mark_dirty();
         Ok(())
     }
 
@@ -614,23 +761,54 @@ impl App {
             return Ok(());
         }
 
-        let current_token = self.pagination.next_token.clone();
-        self.pagination.token_stack.push(current_token.clone());
+        let next_token = self.pagination.next_token.clone();
+        let current_token = self.pagination.current_token.take();
+        self.pagination.token_stack.push(current_token);
+        self.pagination.current_token = next_token.clone();
         self.pagination.current_page += 1;
 
-        self.fetch_page(current_token).await
+        self.fetch_page(next_token).await
     }
 
     pub async fn prev_page(&mut self) -> Result<()> {
-        if self.pagination.current_page <= 1 {
+        let Some(prev_token) = self.pagination.token_stack.pop() else {
             return Ok(());
-        }
+        };
 
-        self.pagination.token_stack.pop();
-        let prev_token = self.pagination.token_stack.pop().flatten();
-        self.pagination.current_page -= 1;
+        self.pagination.current_token = prev_token.clone();
+        self.pagination.current_page = self.pagination.current_page.saturating_sub(1).max(1);
 
         self.fetch_page(prev_token).await
+    }
+
+    /// If the describe view is open, refresh its data from freshly fetched items
+    /// (matched by the resource's id field) so it doesn't show stale content.
+    fn refresh_describe_data(&mut self) {
+        if self.mode != Mode::Describe {
+            return;
+        }
+        let Some(resource) = self.current_resource() else {
+            return;
+        };
+        let Some(old) = self.describe.data.as_ref() else {
+            return;
+        };
+
+        let id = extract_json_value(old, &resource.id_field);
+        if id == "-" {
+            return;
+        }
+
+        let updated = self
+            .items
+            .iter()
+            .find(|item| extract_json_value(item, &resource.id_field) == id)
+            .filter(|item| *item != old)
+            .cloned();
+
+        if let Some(item) = updated {
+            self.describe.set_data(Some(item));
+        }
     }
 
     pub fn reset_pagination(&mut self) {
@@ -674,11 +852,11 @@ impl App {
                 .filter(|(_, item)| {
                     if let Some(res) = resource {
                         res.columns.iter().any(|col| {
-                            let value = extract_json_value(item, &col.json_path).to_lowercase();
-                            value.contains(&filter)
+                            let value = extract_json_value(item, &col.json_path);
+                            contains_ignore_case(&value, &filter)
                         })
                     } else {
-                        item.to_string().to_lowercase().contains(&filter)
+                        contains_ignore_case(&item.to_string(), &filter)
                     }
                 })
                 .map(|(i, _)| i)
@@ -721,22 +899,8 @@ impl App {
             .and_then(|&i| self.items.get(i))
     }
 
-    pub fn selected_item_json(&self) -> Option<String> {
-        if let Some(ref data) = self.describe.data {
-            return Some(serde_json::to_string_pretty(data).unwrap_or_default());
-        }
-        self.selected_item()
-            .map(|item| serde_json::to_string_pretty(item).unwrap_or_default())
-    }
-
-    pub fn describe_line_count(&self) -> usize {
-        self.selected_item_json()
-            .map(|s| s.lines().count())
-            .unwrap_or(0)
-    }
-
     pub fn describe_scroll_to_bottom(&mut self, visible_lines: usize) {
-        let total = self.describe_line_count();
+        let total = self.describe.line_count();
         self.describe.scroll = total.saturating_sub(visible_lines);
     }
 
@@ -900,13 +1064,11 @@ impl App {
 
         self.mode = Mode::Describe;
         self.describe.scroll = 0;
-        self.describe.data = None;
 
         // For now, just show the list data
         // TODO: Fetch detailed data via describe API
-        if let Some(item) = self.selected_item().cloned() {
-            self.describe.data = Some(item);
-        }
+        let item = self.selected_item().cloned();
+        self.describe.set_data(item);
     }
 
     pub fn enter_confirm_mode(&mut self, pending: PendingAction) {
@@ -983,7 +1145,7 @@ impl App {
             .iter()
             .map(|col| ColumnConfigItem {
                 header: col.header.clone(),
-                visible: !hidden.contains(&col.header),
+                visible: !hidden.is_some_and(|h| h.contains(&col.header)),
             })
             .collect();
 
@@ -1094,6 +1256,9 @@ impl App {
 
         // Get operations that need polling
         let ops_to_poll = self.notification_manager.operations_to_poll();
+        if !ops_to_poll.is_empty() {
+            self.mark_dirty();
+        }
 
         for (notification_id, operation_url) in ops_to_poll {
             if !crate::gcp::client::is_trusted_operation_url(&operation_url) {
@@ -1188,26 +1353,30 @@ impl App {
             return;
         };
 
-        let json_path = column.json_path.clone();
         let ascending = self.filter_sort.sort_ascending;
-        let items = &self.items;
 
-        self.filtered_indices.sort_by(|&a, &b| {
-            let val_a = extract_json_value(&items[a], &json_path);
-            let val_b = extract_json_value(&items[b], &json_path);
+        // Extract and parse each sort key once instead of on every comparison
+        let mut keyed: Vec<(usize, SortKey)> = self
+            .filtered_indices
+            .iter()
+            .map(|&i| {
+                (
+                    i,
+                    SortKey::new(extract_json_value(&self.items[i], &column.json_path)),
+                )
+            })
+            .collect();
 
-            // Try numeric comparison first
-            let cmp = match (val_a.parse::<f64>(), val_b.parse::<f64>()) {
-                (Ok(na), Ok(nb)) => na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal),
-                _ => val_a.cmp(&val_b),
-            };
-
+        keyed.sort_by(|(_, a), (_, b)| {
+            let cmp = a.compare(b);
             if ascending {
                 cmp
             } else {
                 cmp.reverse()
             }
         });
+
+        self.filtered_indices = keyed.into_iter().map(|(i, _)| i).collect();
     }
 
     pub fn clear_sort(&mut self) {
@@ -1219,7 +1388,7 @@ impl App {
         self.mode = Mode::Normal;
         self.pending_action = None;
         self.prompt_state = None;
-        self.describe.data = None;
+        self.describe.clear();
     }
 
     // =========================================================================
@@ -1370,6 +1539,7 @@ impl App {
     pub async fn select_project(&mut self) -> Result<()> {
         if let Some(project) = self.projects_selector.current().cloned() {
             if self.switch_project(&project).await? {
+                self.reset_pagination();
                 self.refresh_current().await?;
             }
         }
@@ -1380,6 +1550,7 @@ impl App {
     pub async fn select_zone(&mut self) -> Result<()> {
         if let Some(zone) = self.zones_selector.current().cloned() {
             if self.switch_zone(&zone).await? {
+                self.reset_pagination();
                 self.refresh_current().await?;
             }
         }
@@ -1432,11 +1603,13 @@ impl App {
             },
             "zone" if parts.len() > 1 => {
                 if self.switch_zone(parts[1]).await? {
+                    self.reset_pagination();
                     self.refresh_current().await?;
                 }
             },
             "project" if parts.len() > 1 => {
                 if self.switch_project(parts[1]).await? {
+                    self.reset_pagination();
                     self.refresh_current().await?;
                 }
             },
@@ -2079,9 +2252,88 @@ mod tests {
     fn test_pagination_state_default() {
         let pg = PaginationState::default();
         assert!(pg.next_token.is_none());
+        assert!(pg.current_token.is_none());
         assert!(pg.token_stack.is_empty());
-        assert_eq!(pg.current_page, 0);
+        assert_eq!(pg.current_page, 1);
         assert!(!pg.has_more);
+    }
+
+    #[test]
+    fn test_pagination_state_first_page() {
+        let pg = PaginationState::first_page(Some("tok".into()));
+        assert_eq!(pg.next_token.as_deref(), Some("tok"));
+        assert!(pg.current_token.is_none());
+        assert!(pg.has_more);
+        assert_eq!(pg.current_page, 1);
+
+        let pg = PaginationState::first_page(None);
+        assert!(!pg.has_more);
+    }
+
+    // =========================================================================
+    // Sort / filter helper tests
+    // =========================================================================
+
+    #[test]
+    fn test_sort_key_numeric_and_string() {
+        use std::cmp::Ordering;
+        let k = |s: &str| SortKey::new(s.to_string());
+        assert_eq!(k("9").compare(&k("10")), Ordering::Less);
+        assert_eq!(k("1.5").compare(&k("1.50")), Ordering::Equal);
+        // Mixed numeric/non-numeric falls back to string comparison
+        assert_eq!(k("10").compare(&k("-")), "10".cmp("-"));
+        assert_eq!(k("abc").compare(&k("abd")), Ordering::Less);
+    }
+
+    #[test]
+    fn test_contains_ignore_case_matches_lowercase_semantics() {
+        let cases = [
+            ("Hello World", "world"),
+            ("RUNNING", "run"),
+            ("abc", "abcd"),
+            ("", "a"),
+            ("\u{dc}n\u{ef}c\u{f6}d\u{e9} VM", "\u{fc}n\u{ef}"),
+            ("\u{212A}elvin", "kelvin"),
+            ("us-central1-a", "central"),
+        ];
+        for (haystack, needle) in cases {
+            assert_eq!(
+                contains_ignore_case(haystack, needle),
+                haystack.to_lowercase().contains(needle),
+                "mismatch for {haystack:?} / {needle:?}"
+            );
+        }
+    }
+
+    // =========================================================================
+    // DescribeState tests
+    // =========================================================================
+
+    #[test]
+    fn test_describe_state_caches_lines() {
+        let mut d = DescribeState::default();
+        d.set_data(Some(serde_json::json!({"a": 1, "b": [1, 2]})));
+        let expected = serde_json::to_string_pretty(d.data.as_ref().unwrap()).unwrap();
+        assert_eq!(d.lines.join("\n"), expected);
+        assert_eq!(d.line_count(), expected.lines().count());
+
+        d.clear();
+        assert!(d.data.is_none());
+        assert_eq!(d.line_count(), 0);
+    }
+
+    #[test]
+    fn test_describe_state_scroll_is_clamped() {
+        let mut d = DescribeState::default();
+        d.set_data(Some(serde_json::json!({"a": 1, "b": 2, "c": 3})));
+        // 5 lines: {, a, b, c, }
+        d.visible_lines.set(3);
+        d.scroll_down(100);
+        assert_eq!(d.scroll, 2);
+        d.scroll_up(1);
+        assert_eq!(d.scroll, 1);
+        d.scroll_up(10);
+        assert_eq!(d.scroll, 0);
     }
 
     // =========================================================================

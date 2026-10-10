@@ -282,12 +282,9 @@ impl Config {
         self.aliases.get(alias)
     }
 
-    /// Get hidden columns for a resource type
-    pub fn get_hidden_columns(&self, resource_key: &str) -> HashSet<String> {
-        self.hidden_columns
-            .get(resource_key)
-            .cloned()
-            .unwrap_or_default()
+    /// Get hidden columns for a resource type (None if no columns are hidden)
+    pub fn get_hidden_columns(&self, resource_key: &str) -> Option<&HashSet<String>> {
+        self.hidden_columns.get(resource_key)
     }
 
     /// Set hidden columns for a resource type and save
@@ -428,13 +425,15 @@ mod tests {
             .hidden_columns
             .insert("compute-instances".into(), hidden);
 
-        let result = config.get_hidden_columns("compute-instances");
+        let result = config
+            .get_hidden_columns("compute-instances")
+            .expect("hidden columns should be present");
         assert_eq!(result.len(), 2);
         assert!(result.contains("STATUS"));
         assert!(result.contains("ZONE"));
 
-        // Unknown resource returns empty set
-        assert!(config.get_hidden_columns("nonexistent").is_empty());
+        // Unknown resource returns None
+        assert!(config.get_hidden_columns("nonexistent").is_none());
     }
 
     #[test]

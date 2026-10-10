@@ -275,11 +275,20 @@ where
         return Ok(None);
     }
 
-    // Step 3: Fetch available projects
-    splash.set_message("Fetching projects");
+    // Steps 3-5: Fetch projects, zones and the first page of instances concurrently
+    splash.set_message(&format!(
+        "Fetching projects, zones and instances [{}]",
+        zone
+    ));
     terminal.draw(|f| render_splash(f, &splash))?;
 
-    let available_projects = match gcp::projects::list_project_ids(&client).await {
+    let (projects_result, zones_result, instances_result) = tokio::join!(
+        gcp::projects::list_project_ids(&client),
+        client.list_zones(),
+        resource::fetch_resources_paginated("compute-instances", &client, &[], None),
+    );
+
+    let available_projects = match projects_result {
         Ok(projects) if !projects.is_empty() => {
             tracing::info!("Loaded {} projects", projects.len());
             projects
@@ -293,18 +302,9 @@ where
             vec![project.clone()]
         },
     };
-
     splash.complete_step();
 
-    if check_abort()? {
-        return Ok(None);
-    }
-
-    // Step 4: Fetch available zones
-    splash.set_message("Fetching zones");
-    terminal.draw(|f| render_splash(f, &splash))?;
-
-    let available_zones = match client.list_zones().await {
+    let available_zones = match zones_result {
         Ok(zones) if !zones.is_empty() => {
             tracing::info!("Loaded {} zones", zones.len());
             // Add "all" as first option to show all zones
@@ -325,26 +325,20 @@ where
             all_zones
         },
     };
-
     splash.complete_step();
+
+    // Only the first page is loaded; the app paginates from there
+    let (instances, initial_next_token, initial_error) = match instances_result {
+        Ok(page) => (page.items, page.next_token, None),
+        Err(e) => {
+            let error_msg = gcp::client::format_gcp_error(&e);
+            (Vec::new(), None, Some(error_msg))
+        },
+    };
 
     if check_abort()? {
         return Ok(None);
     }
-
-    // Step 5: Fetch initial data (VM instances)
-    splash.set_message(&format!("Fetching instances from {}", zone));
-    terminal.draw(|f| render_splash(f, &splash))?;
-
-    let (instances, initial_error) = {
-        match resource::fetch_resources("compute-instances", &client, &[]).await {
-            Ok(items) => (items, None),
-            Err(e) => {
-                let error_msg = gcp::client::format_gcp_error(&e);
-                (Vec::new(), Some(error_msg))
-            },
-        }
-    };
 
     splash.complete_step();
     splash.set_message("Ready!");
@@ -359,6 +353,7 @@ where
         available_projects,
         available_zones,
         instances,
+        initial_next_token,
         config,
         args.readonly,
     );
@@ -385,8 +380,16 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Resul
 where
     B::Error: Send + Sync + 'static,
 {
+    // Track toast visibility so the frame where a toast expires is redrawn
+    let mut toast_was_visible = false;
+
     loop {
-        terminal.draw(|f| ui::render(f, app))?;
+        let toast_visible = app.notification_manager.current_toast().is_some();
+        if app.needs_redraw() || toast_was_visible {
+            terminal.draw(|f| ui::render(f, app))?;
+            app.dirty = false;
+        }
+        toast_was_visible = toast_visible;
 
         if event::handle_events(app).await? {
             return Ok(());
