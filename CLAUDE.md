@@ -37,7 +37,7 @@
 - **Language**: Rust (2021 edition)
 - **TUI Framework**: ratatui 0.30 + crossterm 0.29
 - **Async Runtime**: tokio (full features)
-- **HTTP Client**: reqwest with rustls-tls (avoids OpenSSL cross-compilation issues)
+- **HTTP Client**: reqwest 0.13 with rustls + ring provider (avoids OpenSSL and aws-lc-rs cross-compilation issues)
 - **GCP Auth**: gcp_auth 0.12
 - **Serialization**: serde + serde_json
 - **CLI**: clap 4.5 with derive feature

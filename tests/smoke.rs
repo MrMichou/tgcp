@@ -477,14 +477,14 @@ status:
   stopped: [128, 128, 128]
 "#;
 
-        let theme: Theme = serde_yaml::from_str(yaml).expect("custom theme YAML should parse");
+        let theme: Theme = serde_yaml_ng::from_str(yaml).expect("custom theme YAML should parse");
         assert_eq!(theme.name, "test-theme");
     }
 
     #[test]
     fn empty_theme_yaml_uses_defaults() {
         let yaml = "name: minimal\n";
-        let theme: Theme = serde_yaml::from_str(yaml).expect("minimal theme should parse");
+        let theme: Theme = serde_yaml_ng::from_str(yaml).expect("minimal theme should parse");
         assert_eq!(theme.name, "minimal");
     }
 }
