@@ -214,6 +214,14 @@ impl GcpClient {
     /// Poll a GCP operation until completion
     /// Returns the operation status: "RUNNING", "DONE", or error
     pub async fn poll_operation(&self, operation_url: &str) -> Result<OperationStatus> {
+        // Security: never send our bearer token to a host outside googleapis.com
+        if !is_trusted_operation_url(operation_url) {
+            return Err(anyhow::anyhow!(
+                "Refusing to poll untrusted operation URL: {}",
+                operation_url
+            ));
+        }
+
         let response = self.get(operation_url).await?;
 
         let status = response
@@ -252,6 +260,20 @@ pub enum OperationStatus {
     Unknown(String),
 }
 
+/// Check that an operation URL is safe to follow with our credentials:
+/// scheme must be `https` and host must be under `googleapis.com`.
+pub fn is_trusted_operation_url(operation_url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(operation_url) else {
+        return false;
+    };
+    parsed.scheme() == "https"
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && parsed
+            .host_str()
+            .is_some_and(|host| host.ends_with(".googleapis.com"))
+}
+
 /// Extract operation self-link URL from a GCP API response
 pub fn extract_operation_url(response: &Value) -> Option<String> {
     response
@@ -269,6 +291,37 @@ pub fn format_gcp_error(error: &anyhow::Error) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_trusted_operation_url_accepts_googleapis() {
+        assert!(is_trusted_operation_url(
+            "https://compute.googleapis.com/compute/v1/projects/p/zones/z/operations/op-1"
+        ));
+        assert!(is_trusted_operation_url(
+            "https://container.googleapis.com/v1/projects/p/locations/l/operations/op-1"
+        ));
+    }
+
+    #[test]
+    fn test_trusted_operation_url_rejects_untrusted() {
+        // Wrong scheme
+        assert!(!is_trusted_operation_url(
+            "http://compute.googleapis.com/compute/v1/operations/op-1"
+        ));
+        // Foreign host
+        assert!(!is_trusted_operation_url("https://evil.example.com/op"));
+        // Suffix tricks
+        assert!(!is_trusted_operation_url(
+            "https://compute.googleapis.com.evil.com/op"
+        ));
+        assert!(!is_trusted_operation_url("https://evilgoogleapis.com/op"));
+        assert!(!is_trusted_operation_url(
+            "https://compute.googleapis.com@evil.com/op"
+        ));
+        // Not a URL
+        assert!(!is_trusted_operation_url("not a url"));
+        assert!(!is_trusted_operation_url(""));
+    }
 
     #[test]
     fn test_extract_operation_url_present() {

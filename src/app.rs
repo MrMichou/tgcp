@@ -1096,6 +1096,18 @@ impl App {
         let ops_to_poll = self.notification_manager.operations_to_poll();
 
         for (notification_id, operation_url) in ops_to_poll {
+            if !crate::gcp::client::is_trusted_operation_url(&operation_url) {
+                tracing::warn!(
+                    "Refusing to poll untrusted operation URL: {}",
+                    operation_url
+                );
+                self.notification_manager.mark_error(
+                    notification_id,
+                    "Untrusted operation URL, not polling".to_string(),
+                );
+                continue;
+            }
+
             match self.client.poll_operation(&operation_url).await {
                 Ok(status) => match status {
                     OperationStatus::Done => {
@@ -1315,7 +1327,14 @@ impl App {
     // Project/Zone Switching
     // =========================================================================
 
-    pub async fn switch_zone(&mut self, zone: &str) -> Result<()> {
+    /// Switch to another zone. Returns `false` (and shows an error) if the
+    /// zone name is invalid, in which case nothing is changed.
+    pub async fn switch_zone(&mut self, zone: &str) -> Result<bool> {
+        if !crate::gcp::auth::validate_zone_name(zone) {
+            self.error_message = Some(format!("Invalid zone: {}", zone));
+            return Ok(false);
+        }
+
         self.client.switch_zone(zone);
         self.zone = zone.to_string();
 
@@ -1323,10 +1342,17 @@ impl App {
             tracing::warn!("Failed to save zone to config: {}", e);
         }
 
-        Ok(())
+        Ok(true)
     }
 
-    pub async fn switch_project(&mut self, project: &str) -> Result<()> {
+    /// Switch to another project. Returns `false` (and shows an error) if the
+    /// project ID is invalid, in which case nothing is changed.
+    pub async fn switch_project(&mut self, project: &str) -> Result<bool> {
+        if !crate::gcp::auth::validate_project_id(project) {
+            self.error_message = Some(format!("Invalid project ID: {}", project));
+            return Ok(false);
+        }
+
         self.client.switch_project(project).await?;
         self.project = project.to_string();
 
@@ -1338,13 +1364,14 @@ impl App {
         let theme_name = self.config.effective_theme(project);
         self.theme_manager.set_theme(&theme_name);
 
-        Ok(())
+        Ok(true)
     }
 
     pub async fn select_project(&mut self) -> Result<()> {
         if let Some(project) = self.projects_selector.current().cloned() {
-            self.switch_project(&project).await?;
-            self.refresh_current().await?;
+            if self.switch_project(&project).await? {
+                self.refresh_current().await?;
+            }
         }
         self.exit_mode();
         Ok(())
@@ -1352,8 +1379,9 @@ impl App {
 
     pub async fn select_zone(&mut self) -> Result<()> {
         if let Some(zone) = self.zones_selector.current().cloned() {
-            self.switch_zone(&zone).await?;
-            self.refresh_current().await?;
+            if self.switch_zone(&zone).await? {
+                self.refresh_current().await?;
+            }
         }
         self.exit_mode();
         Ok(())
@@ -1403,12 +1431,14 @@ impl App {
                 }
             },
             "zone" if parts.len() > 1 => {
-                self.switch_zone(parts[1]).await?;
-                self.refresh_current().await?;
+                if self.switch_zone(parts[1]).await? {
+                    self.refresh_current().await?;
+                }
             },
             "project" if parts.len() > 1 => {
-                self.switch_project(parts[1]).await?;
-                self.refresh_current().await?;
+                if self.switch_project(parts[1]).await? {
+                    self.refresh_current().await?;
+                }
             },
             "theme" => {
                 if parts.len() > 1 {

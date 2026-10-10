@@ -354,6 +354,13 @@ In `~/.config/tgcp/config.json`:
 }
 ```
 
+`extra_args` is validated against an allow-list (see `validate_ssh_extra_args` in `src/shell/mod.rs`):
+`--ssh-flag`, `--ssh-key-file`, `--internal-ip`, `--dry-run`, and ssh flags `-o -i -l -L -R -D -p -q -v -4 -6`.
+`-o` only accepts a fixed set of option names (StrictHostKeyChecking, UserKnownHostsFile, ServerAliveInterval,
+ServerAliveCountMax, ConnectTimeout, LogLevel, ForwardAgent, IdentitiesOnly, Compression, TCPKeepAlive,
+AddKeysToAgent); `--ssh-flag` values are validated with the same rules. `-F` and `-I` are rejected.
+SSH actions are disabled in `--readonly` mode.
+
 ### How it works
 1. tgcp suspends the TUI
 2. Runs `gcloud compute ssh <instance> --zone <zone> --project <project>`

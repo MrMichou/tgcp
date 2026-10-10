@@ -11,111 +11,201 @@
 //!
 //! # Security
 //!
-//! All SSH arguments are validated against a whitelist to prevent
-//! command injection attacks. See [`validate_ssh_extra_args`] for details.
+//! `gcloud` is spawned directly (never through a shell), so `extra_args` are
+//! not subject to shell interpretation. They are additionally validated by
+//! [`validate_ssh_extra_args`]: only a fixed set of gcloud and ssh flags is
+//! accepted, `-o` options must be in an allow-list of option names, and values
+//! passed through `--ssh-flag` are validated by the same rules as direct ssh
+//! arguments. Flags known to execute local commands or load arbitrary code
+//! (e.g. `ProxyCommand`, `LocalCommand`, `-F`, `-I`) are rejected. This
+//! reduces, but does not eliminate, the risk from a tampered config file: the
+//! config file must still be treated as trusted input.
 
 use anyhow::{anyhow, Context, Result};
 use std::process::{Command, Stdio};
 
-/// Whitelist of allowed SSH argument prefixes for security (lowercase for case-insensitive comparison)
-/// These are safe gcloud compute ssh arguments that don't allow arbitrary command execution
-const ALLOWED_SSH_ARG_PREFIXES: &[&str] = &[
-    "-o",             // SSH options (e.g., -o StrictHostKeyChecking=no)
-    "-i",             // Identity file
-    "-l",             // Local port forwarding (-L)
-    "-r",             // Remote port forwarding (-R)
-    "-d",             // Dynamic port forwarding (-D, SOCKS proxy)
-    "-p",             // Port
-    "-q",             // Quiet mode
-    "-v",             // Verbose mode
-    "-4",             // IPv4 only
-    "-6",             // IPv6 only
-    "--ssh-flag",     // gcloud ssh flag passthrough
-    "--ssh-key-file", // SSH key file
-    "--internal-ip",  // Use internal IP
-    "--dry-run",      // Dry run mode
+/// gcloud-level flags accepted in `extra_args` that take no value
+const ALLOWED_GCLOUD_SWITCHES: &[&str] = &["--internal-ip", "--dry-run"];
+
+/// ssh option names (for `-o Name=value`) that are considered safe.
+/// Compared case-insensitively, as ssh does.
+const ALLOWED_SSH_OPTIONS: &[&str] = &[
+    "StrictHostKeyChecking",
+    "UserKnownHostsFile",
+    "ServerAliveInterval",
+    "ServerAliveCountMax",
+    "ConnectTimeout",
+    "LogLevel",
+    "ForwardAgent",
+    "IdentitiesOnly",
+    "Compression",
+    "TCPKeepAlive",
+    "AddKeysToAgent",
 ];
 
-/// Dangerous SSH options that could allow command execution
-const DANGEROUS_SSH_OPTIONS: &[&str] = &["proxycommand", "localcommand", "permitlocalcommand"];
+/// Single-letter ssh flags that take a value (attached or as the next argument).
+/// Case-sensitive: `-i` (identity file) is not `-I` (PKCS#11 provider).
+/// `-o` is handled separately so its value can be checked.
+const SSH_FLAGS_WITH_VALUE: &[char] = &[
+    'i', // Identity file
+    'l', // Login name
+    'L', // Local port forwarding
+    'R', // Remote port forwarding
+    'D', // Dynamic port forwarding (SOCKS proxy)
+    'p', // Port
+];
 
-/// Arguments that take a separate value (following argument) - lowercase for case-insensitive comparison
-const ARGS_WITH_VALUES: &[&str] = &[
-    "-o",
-    "-i",
-    "-l",
-    "-r",
-    "-d",
-    "-p",
-    "--ssh-flag",
-    "--ssh-key-file",
+/// Single-letter ssh flags that take no value
+const SSH_SWITCHES: &[char] = &['q', 'v', '4', '6'];
+
+/// Single-letter ssh flags that are explicitly forbidden, with the reason
+const FORBIDDEN_SSH_FLAGS: &[(char, &str)] = &[
+    ('F', "loads an arbitrary ssh config file"),
+    ('I', "loads an arbitrary PKCS#11 shared library"),
 ];
 
 /// Validate that SSH extra_args only contain safe arguments
 /// Returns Ok(()) if all args are safe, Err with details if unsafe arg found
 pub fn validate_ssh_extra_args(args: &[String]) -> Result<()> {
-    let mut iter = args.iter().peekable();
+    // Check every argument, including flag values, for control characters
+    if let Some(arg) = args.iter().find(|a| a.chars().any(char::is_control)) {
+        return Err(anyhow!(
+            "SSH argument '{}' contains control characters",
+            arg.escape_debug()
+        ));
+    }
+    validate_args(args, true)
+}
+
+/// Validate a list of arguments.
+///
+/// When `allow_gcloud_flags` is false (i.e. when validating the content of an
+/// `--ssh-flag` value), only raw ssh flags are accepted.
+fn validate_args(args: &[String], allow_gcloud_flags: bool) -> Result<()> {
+    let mut iter = args.iter();
 
     while let Some(arg) = iter.next() {
-        let arg_lower = arg.to_lowercase();
+        if arg.starts_with("--") {
+            if !allow_gcloud_flags {
+                return Err(anyhow!(
+                    "SSH argument '{}' is not allowed inside --ssh-flag",
+                    arg
+                ));
+            }
+            validate_gcloud_flag(arg, &mut iter)?;
+            continue;
+        }
 
-        // Check if arg starts with an allowed prefix
-        let is_allowed = ALLOWED_SSH_ARG_PREFIXES
-            .iter()
-            .any(|&prefix| arg_lower.starts_with(prefix));
+        let mut chars = arg.chars();
+        let flag = match (chars.next(), chars.next()) {
+            (Some('-'), Some(flag)) => flag,
+            _ => return Err(anyhow!("SSH argument '{}' is not in the allowed list", arg)),
+        };
+        let attached = chars.as_str();
 
-        if !is_allowed {
+        if let Some((_, reason)) = FORBIDDEN_SSH_FLAGS.iter().find(|(f, _)| *f == flag) {
             return Err(anyhow!(
-                "SSH argument '{}' is not in the allowed list. \
-                Allowed prefixes: {:?}",
-                arg,
-                ALLOWED_SSH_ARG_PREFIXES
+                "SSH argument '-{}' is not allowed for security reasons ({})",
+                flag,
+                reason
             ));
         }
 
-        // Check if this argument takes a separate value
-        let takes_value = ARGS_WITH_VALUES.iter().any(|&prefix| {
-            arg_lower == prefix || (arg_lower.starts_with(prefix) && arg.len() == prefix.len())
-        });
-
-        // Additional check: block potential command injection via -o
-        if arg_lower.starts_with("-o") {
-            // Get the option value - either attached to -o or as the next argument
-            let option_value = if arg.len() > 2 {
-                // Value attached: -oStrictHostKeyChecking=no
-                arg[2..].to_string()
-            } else {
-                // Value is next argument: -o StrictHostKeyChecking=no
-                // Security: We MUST validate the next argument too
-                match iter.peek() {
-                    Some(next_arg) => next_arg.to_string(),
-                    None => continue, // -o at end with no value, will fail at SSH level
-                }
-            };
-
-            // Block dangerous SSH options
-            let option_lower = option_value.to_lowercase();
-            for dangerous in DANGEROUS_SSH_OPTIONS {
-                if option_lower.contains(dangerous) {
-                    return Err(anyhow!(
-                        "SSH option '{}' contains potentially dangerous option '{}'. \
-                        This option is not allowed for security reasons.",
-                        option_value,
-                        dangerous
-                    ));
-                }
+        if flag == 'o' {
+            let value = take_value(arg, attached, &mut iter)?;
+            validate_ssh_option(&value)?;
+        } else if SSH_FLAGS_WITH_VALUE.contains(&flag) {
+            take_value(arg, attached, &mut iter)?;
+        } else if SSH_SWITCHES.contains(&flag) {
+            // Allow repeated verbosity (-vvv), otherwise no attached value
+            let ok = attached.is_empty() || (flag == 'v' && attached.chars().all(|c| c == 'v'));
+            if !ok {
+                return Err(anyhow!("SSH argument '{}' is not in the allowed list", arg));
             }
-
-            // If -o was standalone, skip the next argument (we already validated it)
-            if arg.len() == 2 {
-                iter.next();
-            }
-        } else if takes_value {
-            // Skip the next argument as it's a value for this flag (e.g., -i /path/to/key)
-            iter.next();
+        } else {
+            return Err(anyhow!("SSH argument '{}' is not in the allowed list", arg));
         }
     }
     Ok(())
+}
+
+/// Validate a `--long` gcloud flag, consuming its value from `iter` if needed
+fn validate_gcloud_flag<'a, I>(arg: &str, iter: &mut I) -> Result<()>
+where
+    I: Iterator<Item = &'a String>,
+{
+    let (name, inline_value) = match arg.split_once('=') {
+        Some((name, value)) => (name, Some(value)),
+        None => (arg, None),
+    };
+
+    match name {
+        "--ssh-flag" => {
+            let value = inline_or_next(arg, inline_value, iter)?;
+            // gcloud splits each --ssh-flag value on whitespace and passes the
+            // pieces to ssh, so validate them as raw ssh arguments.
+            let tokens: Vec<String> = value.split_whitespace().map(str::to_string).collect();
+            if tokens.is_empty() {
+                return Err(anyhow!("SSH argument '{}' has an empty value", arg));
+            }
+            validate_args(&tokens, false)
+        },
+        "--ssh-key-file" => inline_or_next(arg, inline_value, iter).map(|_| ()),
+        _ if ALLOWED_GCLOUD_SWITCHES.contains(&name) && inline_value.is_none() => Ok(()),
+        _ => Err(anyhow!("SSH argument '{}' is not in the allowed list", arg)),
+    }
+}
+
+/// Get a flag value from `--flag=value` or from the following argument
+fn inline_or_next<'a, I>(arg: &str, inline_value: Option<&str>, iter: &mut I) -> Result<String>
+where
+    I: Iterator<Item = &'a String>,
+{
+    match inline_value {
+        Some(v) if !v.is_empty() => Ok(v.to_string()),
+        Some(_) => Err(anyhow!("SSH argument '{}' has an empty value", arg)),
+        None => iter
+            .next()
+            .cloned()
+            .ok_or_else(|| anyhow!("SSH argument '{}' is missing its value", arg)),
+    }
+}
+
+/// Get a short flag value, either attached (`-p22`) or as the next argument (`-p 22`)
+fn take_value<'a, I>(arg: &str, attached: &str, iter: &mut I) -> Result<String>
+where
+    I: Iterator<Item = &'a String>,
+{
+    if attached.is_empty() {
+        iter.next()
+            .cloned()
+            .ok_or_else(|| anyhow!("SSH argument '{}' is missing its value", arg))
+    } else {
+        Ok(attached.to_string())
+    }
+}
+
+/// Validate the value of an ssh `-o` option against the allow-list.
+/// ssh accepts both `Name=value` and `Name value` forms.
+fn validate_ssh_option(option: &str) -> Result<()> {
+    let name = option
+        .trim_start()
+        .split(|c: char| c == '=' || c.is_whitespace())
+        .next()
+        .unwrap_or_default();
+
+    if ALLOWED_SSH_OPTIONS
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(name))
+    {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "SSH option '{}' is not allowed. Allowed options: {}",
+            name,
+            ALLOWED_SSH_OPTIONS.join(", ")
+        ))
+    }
 }
 
 /// Validate GCP resource name (instance, zone, project)
@@ -268,17 +358,36 @@ pub fn ssh_to_instance(opts: &SshOptions) -> ShellResult {
 }
 
 /// Open URL in browser (for console links)
+///
+/// The opener is spawned detached with null stdio and is not waited on, so it
+/// neither blocks the UI nor writes over the TUI.
 pub fn open_browser(url: &str) -> ShellResult {
     let (cmd, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
         ("open", vec![url])
     } else if cfg!(target_os = "windows") {
-        ("cmd", vec!["/C", "start", url])
+        // Avoid `cmd /C start`, which re-parses the URL with cmd.exe metacharacters
+        ("rundll32", vec!["url.dll,FileProtocolHandler", url])
     } else {
         // Linux - try xdg-open first
         ("xdg-open", vec![url])
     };
 
-    execute_command(cmd, &args.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    match Command::new(cmd)
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(mut child) => {
+            // Reap the process in the background so it doesn't linger as a zombie
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            ShellResult::Success
+        },
+        Err(e) => ShellResult::Error(format!("Failed to execute {}: {}", cmd, e)),
+    }
 }
 
 /// Execute a command, inheriting stdio
@@ -450,13 +559,17 @@ mod tests {
         assert!(validate_ssh_extra_args(&args).is_ok());
     }
 
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
     #[test]
     fn test_ssh_args_blocked_proxycommand_attached() {
         // ProxyCommand attached to -o
         let args = vec!["-oProxyCommand=nc %h %p".to_string()];
         let result = validate_ssh_extra_args(&args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("proxycommand"));
+        assert!(result.unwrap_err().to_string().contains("ProxyCommand"));
     }
 
     #[test]
@@ -465,7 +578,14 @@ mod tests {
         let args = vec!["-o".to_string(), "ProxyCommand=nc %h %p".to_string()];
         let result = validate_ssh_extra_args(&args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("proxycommand"));
+        assert!(result.unwrap_err().to_string().contains("ProxyCommand"));
+    }
+
+    #[test]
+    fn test_ssh_args_blocked_proxycommand_space_form() {
+        // ssh also accepts "Name value" without '='
+        assert!(validate_ssh_extra_args(&args(&["-o", "ProxyCommand nc %h %p"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["-o", " ProxyCommand=x"])).is_err());
     }
 
     #[test]
@@ -473,7 +593,120 @@ mod tests {
         let args = vec!["-oLocalCommand=whoami".to_string()];
         let result = validate_ssh_extra_args(&args);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("localcommand"));
+        assert!(result.unwrap_err().to_string().contains("LocalCommand"));
+    }
+
+    #[test]
+    fn test_ssh_args_blocked_options_not_in_allowlist() {
+        // Options not on the deny-list before, but dangerous
+        for opt in [
+            "-oProxyJump=evil",
+            "-oKnownHostsCommand=id",
+            "-oPKCS11Provider=/tmp/evil.so",
+            "-oInclude=/tmp/evil",
+            "-oRemoteCommand=id",
+            "-oMatch=exec id",
+        ] {
+            assert!(
+                validate_ssh_extra_args(&args(&[opt])).is_err(),
+                "{} should be rejected",
+                opt
+            );
+        }
+    }
+
+    #[test]
+    fn test_ssh_args_allowed_options() {
+        for opt in [
+            "-oStrictHostKeyChecking=no",
+            "-oUserKnownHostsFile=/dev/null",
+            "-oServerAliveInterval=30",
+            "-oServerAliveCountMax=3",
+            "-oConnectTimeout=10",
+            "-oLogLevel=ERROR",
+            "-oForwardAgent=yes",
+            "-oIdentitiesOnly=yes",
+            "-oCompression=yes",
+            "-oTCPKeepAlive=yes",
+            "-oAddKeysToAgent=yes",
+            "-ostricthostkeychecking=no",
+        ] {
+            assert!(
+                validate_ssh_extra_args(&args(&[opt])).is_ok(),
+                "{} should be allowed",
+                opt
+            );
+        }
+        assert!(validate_ssh_extra_args(&args(&["-o", "ConnectTimeout 10"])).is_ok());
+    }
+
+    #[test]
+    fn test_ssh_args_ssh_flag_value_is_validated() {
+        // Value as next argument
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag", "-oProxyCommand=id"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag", "-o ProxyCommand=id"])).is_err());
+        // Previously the value was skipped entirely
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag", "-F/tmp/cfg"])).is_err());
+        // Valid
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag", "-vvv"])).is_ok());
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag", "-L 80:localhost:80"])).is_ok());
+    }
+
+    #[test]
+    fn test_ssh_args_ssh_flag_equals_form_is_validated() {
+        // `=` form previously bypassed the -o check entirely
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag=-oProxyCommand=id"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag=-o ProxyCommand=id"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag=-I/tmp/evil.so"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag=-oStrictHostKeyChecking=no"])).is_ok());
+    }
+
+    #[test]
+    fn test_ssh_args_ssh_flag_rejects_nested_gcloud_flags_and_missing_values() {
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag=--ssh-flag=-v"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["--ssh-flag="])).is_err());
+        // A dangling -o can't be completed by a later --ssh-flag
+        assert!(
+            validate_ssh_extra_args(&args(&["--ssh-flag=-o", "--ssh-flag=ProxyCommand=id"]))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_ssh_args_blocked_pkcs11_and_config_file() {
+        // -I must not be treated as -i
+        assert!(validate_ssh_extra_args(&args(&["-I", "/tmp/evil.so"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["-I/tmp/evil.so"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["-F", "/tmp/cfg"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["-F/tmp/cfg"])).is_err());
+        // -i is still allowed
+        assert!(validate_ssh_extra_args(&args(&["-i", "/path/key"])).is_ok());
+        assert!(validate_ssh_extra_args(&args(&["-i/path/key"])).is_ok());
+    }
+
+    #[test]
+    fn test_ssh_args_value_flag_consumes_value() {
+        // The value of -i is not interpreted as a flag
+        assert!(validate_ssh_extra_args(&args(&["-i", "-oProxyCommand=id"])).is_ok());
+        // But the next flag after a value is validated
+        assert!(validate_ssh_extra_args(&args(&["-i", "key", "-oProxyCommand=id"])).is_err());
+    }
+
+    #[test]
+    fn test_ssh_args_prefix_matching_removed() {
+        // Previously any arg starting with an allowed prefix was accepted
+        assert!(validate_ssh_extra_args(&args(&["--internal-ipX"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["-qX"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["-O", "exit"])).is_err());
+        assert!(validate_ssh_extra_args(&args(&["--ssh-key-file=/k", "--dry-run"])).is_ok());
+    }
+
+    #[test]
+    fn test_ssh_args_rejects_control_chars() {
+        assert!(
+            validate_ssh_extra_args(&args(&["-o", "LogLevel=ERROR\nProxyCommand=id"])).is_err()
+        );
     }
 
     #[test]
@@ -537,10 +770,10 @@ mod tests {
 
     #[test]
     fn test_ssh_args_o_at_end() {
-        // -o at the end with no following argument should pass validation
-        // (it will fail at the SSH level, but not our validation)
+        // -o at the end with no value is rejected: a dangling -o could
+        // otherwise be completed by an argument gcloud appends after it
         let args = vec!["-o".to_string()];
-        assert!(validate_ssh_extra_args(&args).is_ok());
+        assert!(validate_ssh_extra_args(&args).is_err());
     }
 
     // =========================================================================

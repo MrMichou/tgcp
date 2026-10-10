@@ -83,15 +83,36 @@ fn setup_logging(level: LogLevel) -> Option<tracing_appender::non_blocking::Work
     let log_path = get_log_path();
 
     if let Some(parent) = log_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        // Security: log directory is owner-only (0700)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        let _ = builder.create(parent);
     }
 
-    let file = match std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).append(true);
+    // Security: log file is owner-only (0600) since it may contain resource names
+    #[cfg(unix)]
     {
-        Ok(f) => f,
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    let file = match options.open(&log_path) {
+        Ok(f) => {
+            // Tighten permissions on log files created by older versions
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
+            }
+            f
+        },
         Err(e) => {
             eprintln!("Warning: could not open log file {:?}: {}", log_path, e);
             return None;
@@ -205,6 +226,19 @@ where
 
     // Step 1: Load configuration
     let config = Config::load();
+
+    // Security: validate CLI-provided identifiers before they reach URLs or gcloud
+    if let Some(project) = &args.project {
+        if !auth::validate_project_id(project) {
+            return Err(anyhow::anyhow!("Invalid project ID: {:?}", project));
+        }
+    }
+    if let Some(zone) = &args.zone {
+        if !auth::validate_zone_name(zone) {
+            return Err(anyhow::anyhow!("Invalid zone: {:?}", zone));
+        }
+    }
+
     let project = args
         .project
         .clone()

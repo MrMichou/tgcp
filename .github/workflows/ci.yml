@@ -11,6 +11,9 @@ env:
   RUSTFLAGS: -Dwarnings
   RUST_BACKTRACE: 1
 
+permissions:
+  contents: read
+
 jobs:
   # Format check - fast, runs first
   fmt:

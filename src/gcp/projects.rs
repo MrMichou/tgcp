@@ -6,6 +6,9 @@ use super::client::GcpClient;
 use anyhow::Result;
 use serde_json::Value;
 
+/// Maximum number of pages fetched by [`list_projects`] before stopping
+const MAX_PAGES: usize = 100;
+
 /// Project information
 #[derive(Debug, Clone)]
 pub struct Project {
@@ -30,13 +33,14 @@ impl From<&Value> for Project {
 pub async fn list_projects(client: &GcpClient) -> Result<Vec<Project>> {
     let mut all_projects: Vec<Project> = Vec::new();
     let mut page_token: Option<String> = None;
+    let mut seen_tokens = std::collections::HashSet::new();
 
-    loop {
+    for page in 1..=MAX_PAGES {
         let url = if let Some(ref token) = page_token {
             format!(
                 "{}?pageToken={}",
                 client.resourcemanager_url("projects"),
-                token
+                urlencoding::encode(token)
             )
         } else {
             client.resourcemanager_url("projects")
@@ -65,6 +69,16 @@ pub async fn list_projects(client: &GcpClient) -> Result<Vec<Project>> {
         // Check for next page
         match response.get("nextPageToken").and_then(|v| v.as_str()) {
             Some(token) if !token.is_empty() => {
+                if !seen_tokens.insert(token.to_string()) {
+                    tracing::warn!("Repeated page token while listing projects, stopping");
+                    break;
+                }
+                if page == MAX_PAGES {
+                    tracing::warn!(
+                        "Reached max page count ({}) while listing projects, results truncated",
+                        MAX_PAGES
+                    );
+                }
                 page_token = Some(token.to_string());
             },
             _ => break,

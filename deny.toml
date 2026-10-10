@@ -74,6 +74,6 @@ deny = [
 [sources]
 # Allowed registry sources
 unknown-registry = "deny"
-unknown-git = "warn"
+unknown-git = "deny"
 # Only allow crates.io
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]

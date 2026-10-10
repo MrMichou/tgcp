@@ -279,8 +279,10 @@ async fn handle_normal_mode(app: &mut App, code: KeyCode, modifiers: KeyModifier
 }
 
 async fn handle_action(app: &mut App, action_def: &crate::resource::ActionDef) -> Result<()> {
-    // Shell actions don't respect readonly mode (they don't modify resources)
-    if app.readonly && !action_def.shell_action {
+    // In readonly mode, only the console link is allowed: SSH sessions give
+    // write access to the instance, so they are blocked like other actions.
+    let is_read_only_safe = action_def.shell_action && action_def.sdk_method == "open_console";
+    if app.readonly && !is_read_only_safe {
         app.show_warning("Read-only mode: actions are disabled");
         return Ok(());
     }

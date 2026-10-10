@@ -127,7 +127,7 @@ pub fn get_gcloud_config_dir() -> Option<PathBuf> {
 /// Validate a GCP project ID format
 /// Project IDs must be 6-30 characters, lowercase letters, digits, and hyphens
 /// Must start with a letter and cannot end with a hyphen
-fn validate_project_id(project: &str) -> bool {
+pub fn validate_project_id(project: &str) -> bool {
     if project.len() < 6 || project.len() > 30 {
         return false;
     }
@@ -244,7 +244,7 @@ pub fn get_default_project() -> Option<String> {
 /// Validate a GCP zone name format
 /// Zone names follow the pattern: region-zone (e.g., us-central1-a)
 /// Only alphanumeric characters and hyphens are allowed
-fn validate_zone_name(zone: &str) -> bool {
+pub fn validate_zone_name(zone: &str) -> bool {
     if zone.is_empty() || zone.len() > 63 {
         return false;
     }
