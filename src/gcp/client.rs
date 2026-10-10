@@ -58,11 +58,21 @@ impl GcpClient {
     }
 
     /// Switch to a different project
-    pub async fn switch_project(&mut self, project_id: &str) -> Result<()> {
+    pub fn switch_project(&mut self, project_id: &str) {
         // ADC access tokens are not bound to a project, so the cached token
         // stays valid across project switches; no forced refresh needed.
         self.project_id = project_id.to_string();
-        Ok(())
+    }
+
+    /// Client without credentials, for unit tests (every API call fails)
+    #[cfg(test)]
+    pub fn for_tests(project_id: &str, zone: &str) -> Self {
+        Self {
+            credentials: GcpCredentials::unauthenticated(),
+            http: GcpHttpClient::new().expect("HTTP client"),
+            project_id: project_id.to_string(),
+            zone: zone.to_string(),
+        }
     }
 
     /// Switch to a different zone

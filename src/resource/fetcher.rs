@@ -801,53 +801,50 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-/// Enrich VM instances with monitoring metrics (CPU, Network, Disk IO)
-/// This function fetches metrics from Cloud Monitoring API and merges them into the items
-/// with visual indicators for trends and load levels
-pub async fn enrich_with_metrics(
-    items: &mut [Value],
-    client: &crate::gcp::client::GcpClient,
-    history: &mut MetricsHistory,
-) -> Result<()> {
-    use super::sdk_dispatch;
-
-    if items.is_empty() {
-        return Ok(());
-    }
-
-    // Collect instance IDs
-    let instance_ids: Vec<Value> = items
+/// Collect the instance IDs of VM items, for use with [`fetch_instance_metrics`]
+pub fn instance_ids(items: &[Value]) -> Vec<Value> {
+    items
         .iter()
         .filter_map(|item| {
             item.get("id")
                 .and_then(|v| v.as_str())
                 .map(|s| Value::String(s.to_string()))
         })
-        .collect();
+        .collect()
+}
+
+/// Fetch monitoring metrics (CPU, Network, Disk IO) for the given instance IDs.
+/// Returns a map of instance ID -> metrics, to be merged with [`apply_instance_metrics`].
+pub async fn fetch_instance_metrics(
+    instance_ids: Vec<Value>,
+    client: &crate::gcp::client::GcpClient,
+) -> Result<serde_json::Map<String, Value>> {
+    use super::sdk_dispatch;
 
     if instance_ids.is_empty() {
-        return Ok(());
+        return Ok(serde_json::Map::new());
     }
 
-    // Fetch metrics for all instances
     let params = serde_json::json!({
         "instance_ids": instance_ids
     });
 
-    let metrics_result =
-        sdk_dispatch::invoke_sdk("monitoring", "get_instance_metrics", client, &params).await;
+    let mut data =
+        sdk_dispatch::invoke_sdk("monitoring", "get_instance_metrics", client, &params).await?;
 
-    let metrics_map = match metrics_result {
-        Ok(mut data) => match data.get_mut("metrics").map(Value::take) {
-            Some(Value::Object(map)) => map,
-            _ => serde_json::Map::new(),
-        },
-        Err(e) => {
-            tracing::debug!("Failed to fetch monitoring metrics: {}", e);
-            return Ok(()); // Don't fail the whole operation, just skip metrics
-        },
-    };
+    Ok(match data.get_mut("metrics").map(Value::take) {
+        Some(Value::Object(map)) => map,
+        _ => serde_json::Map::new(),
+    })
+}
 
+/// Merge fetched monitoring metrics into VM items, with visual indicators
+/// for trends (compared to `history`) and load levels
+pub fn apply_instance_metrics(
+    items: &mut [Value],
+    metrics_map: &serde_json::Map<String, Value>,
+    history: &mut MetricsHistory,
+) {
     // Merge metrics into items
     for item in items.iter_mut() {
         if let Value::Object(ref mut map) = item {
@@ -941,8 +938,6 @@ pub async fn enrich_with_metrics(
             }
         }
     }
-
-    Ok(())
 }
 
 /// Get trend indicator by comparing current value with previous

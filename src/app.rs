@@ -3,15 +3,18 @@
 //! Central application state management for tgcp.
 
 use crate::config::Config;
-use crate::gcp::client::{GcpClient, OperationStatus};
+use crate::gcp::client::{extract_operation_url, GcpClient, OperationStatus};
 use crate::notification::{DetailLevel, NotificationManager, OperationType, SoundConfig};
 use crate::resource::{
-    enrich_with_metrics, extract_json_value, fetch_resources_paginated, get_all_resource_keys,
-    get_resource, MetricsHistory, ResourceDef, ResourceFilter,
+    apply_instance_metrics, execute_action, extract_json_value, fetch_instance_metrics,
+    fetch_resources_paginated, get_all_resource_keys, get_resource, instance_ids, MetricsHistory,
+    PaginatedResult, ResourceDef, ResourceFilter,
 };
+use crate::task::{self, TaskReceiver, TaskResult, TaskSender};
 use crate::theme::ThemeManager;
 use anyhow::Result;
 use crossterm::event::KeyCode;
+use futures::StreamExt;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::ops::Range;
@@ -512,6 +515,28 @@ pub struct App {
 
     /// Whether the UI needs to be redrawn on the next loop iteration
     pub dirty: bool,
+
+    // Background tasks
+    /// Sender cloned into background tasks to report results
+    task_tx: TaskSender,
+    /// Receiver taken by the main loop (see [`App::take_task_receiver`])
+    task_rx: Option<TaskReceiver>,
+    /// Incremented on each fetch; results of older fetches are ignored
+    fetch_generation: u64,
+    /// Operations with a poll request currently in flight
+    polling_in_flight: HashSet<Uuid>,
+
+    /// SSH session requested by a key handler, run by the main loop once the
+    /// terminal event stream is released
+    pub pending_ssh: Option<SshRequest>,
+}
+
+/// SSH session to start from the main loop
+#[derive(Debug, Clone)]
+pub struct SshRequest {
+    pub resource_id: String,
+    pub item: Value,
+    pub force_iap: bool,
 }
 
 impl App {
@@ -529,6 +554,7 @@ impl App {
         readonly: bool,
     ) -> Self {
         let filtered_indices: Vec<usize> = (0..initial_items.len()).collect();
+        let (task_tx, task_rx) = task::channel();
 
         // Initialize theme manager and apply project-specific theme
         let mut theme_manager = ThemeManager::load();
@@ -597,7 +623,17 @@ impl App {
             column_config_state: None,
             cached_commands: None,
             dirty: true,
+            task_tx,
+            task_rx: Some(task_rx),
+            fetch_generation: 0,
+            polling_in_flight: HashSet::new(),
+            pending_ssh: None,
         }
+    }
+
+    /// Take the receiving end of the background task channel (main loop only)
+    pub fn take_task_receiver(&mut self) -> Option<TaskReceiver> {
+        self.task_rx.take()
     }
 
     /// Request a redraw on the next loop iteration
@@ -688,46 +724,65 @@ impl App {
     // Data Fetching
     // =========================================================================
 
-    /// Re-fetch the currently displayed page
-    pub async fn refresh_current(&mut self) -> Result<()> {
-        self.fetch_page(self.pagination.current_token.clone()).await
+    /// Re-fetch the currently displayed page (in the background)
+    pub fn refresh_current(&mut self) {
+        self.start_fetch(self.pagination.current_token.clone());
     }
 
-    async fn fetch_page(&mut self, page_token: Option<String>) -> Result<()> {
+    /// Start fetching a page of the current resource in a background task.
+    /// The result is applied by [`App::handle_task_result`]; any fetch still in
+    /// flight is superseded and its result will be ignored.
+    fn start_fetch(&mut self, page_token: Option<String>) {
         if self.current_resource().is_none() {
             self.error_message = Some(format!("Unknown resource: {}", self.current_resource_key));
-            return Ok(());
+            return;
         }
 
+        self.fetch_generation += 1;
         self.loading = true;
         self.error_message = None;
+        self.mark_dirty();
 
+        let generation = self.fetch_generation;
+        let resource_key = self.current_resource_key.clone();
         let filters = self.build_filters_from_context();
+        let client = self.client.clone();
+        let tx = self.task_tx.clone();
 
-        match fetch_resources_paginated(
-            &self.current_resource_key,
-            &self.client,
-            &filters,
-            page_token.as_deref(),
-        )
-        .await
-        {
+        tokio::spawn(async move {
+            let result =
+                fetch_resources_paginated(&resource_key, &client, &filters, page_token.as_deref())
+                    .await;
+            task::send(&tx, TaskResult::Page { generation, result });
+        });
+    }
+
+    /// Fetch monitoring metrics for the displayed VM instances in the background
+    pub fn start_metrics_fetch(&mut self) {
+        if self.current_resource_key != "compute-instances" {
+            return;
+        }
+        let ids = instance_ids(&self.items);
+        if ids.is_empty() {
+            return;
+        }
+
+        let generation = self.fetch_generation;
+        let client = self.client.clone();
+        let tx = self.task_tx.clone();
+
+        tokio::spawn(async move {
+            let result = fetch_instance_metrics(ids, &client).await;
+            task::send(&tx, TaskResult::Metrics { generation, result });
+        });
+    }
+
+    /// Apply a fetched page to the app state
+    fn apply_page(&mut self, result: Result<PaginatedResult>) {
+        match result {
             Ok(result) => {
                 let prev_selected = self.nav.selected;
                 self.items = result.items;
-
-                // Enrich VM instances with monitoring metrics
-                if self.current_resource_key == "compute-instances" {
-                    if let Err(e) = enrich_with_metrics(
-                        &mut self.items,
-                        &self.client,
-                        &mut self.metrics_history,
-                    )
-                    .await
-                    {
-                        tracing::debug!("Failed to enrich with metrics: {}", e);
-                    }
-                }
 
                 self.apply_filter();
                 self.refresh_describe_data();
@@ -740,6 +795,9 @@ impl App {
                 } else {
                     self.nav.selected = 0;
                 }
+
+                // Metrics are loaded separately so the list shows up right away
+                self.start_metrics_fetch();
             },
             Err(e) => {
                 self.error_message = Some(crate::gcp::client::format_gcp_error(&e));
@@ -752,13 +810,76 @@ impl App {
 
         self.loading = false;
         self.mark_refreshed();
-        self.mark_dirty();
-        Ok(())
     }
 
-    pub async fn next_page(&mut self) -> Result<()> {
-        if !self.pagination.has_more {
-            return Ok(());
+    /// Apply the result of a background task to the app state
+    pub fn handle_task_result(&mut self, result: TaskResult) {
+        self.mark_dirty();
+
+        match result {
+            TaskResult::Page { generation, result } => {
+                if generation == self.fetch_generation {
+                    self.apply_page(result);
+                } else {
+                    tracing::debug!("Dropping stale page result (generation {})", generation);
+                }
+            },
+            TaskResult::Metrics { generation, result } => {
+                if generation != self.fetch_generation {
+                    return;
+                }
+                match result {
+                    Ok(metrics) => {
+                        apply_instance_metrics(
+                            &mut self.items,
+                            &metrics,
+                            &mut self.metrics_history,
+                        );
+                        // Metrics columns may be used for filtering or sorting
+                        let selected = self.nav.selected;
+                        self.apply_filter();
+                        if selected < self.filtered_indices.len() {
+                            self.nav.selected = selected;
+                        }
+                        self.refresh_describe_data();
+                    },
+                    Err(e) => tracing::debug!("Failed to fetch monitoring metrics: {}", e),
+                }
+            },
+            TaskResult::Actions { results, bulk } => self.apply_action_results(results, bulk),
+            TaskResult::OperationPolled {
+                notification_id,
+                result,
+            } => {
+                self.polling_in_flight.remove(&notification_id);
+                match result {
+                    Ok(OperationStatus::Done) => {
+                        self.notification_manager.mark_success(notification_id);
+                        // Refresh current view to show updated state
+                        self.refresh_current();
+                    },
+                    Ok(OperationStatus::Failed(error)) => {
+                        self.notification_manager.mark_error(notification_id, error);
+                    },
+                    Ok(OperationStatus::Running) => {
+                        // Still running, will poll again
+                    },
+                    Ok(OperationStatus::Unknown(s)) => {
+                        tracing::warn!("Unknown operation status: {}", s);
+                    },
+                    Err(e) => {
+                        // Don't mark as error, might be transient
+                        tracing::warn!("Failed to poll operation: {}", e);
+                    },
+                }
+            },
+        }
+    }
+
+    pub fn next_page(&mut self) {
+        // The next token is only known once the current page has loaded
+        if self.loading || !self.pagination.has_more {
+            return;
         }
 
         let next_token = self.pagination.next_token.clone();
@@ -767,18 +888,111 @@ impl App {
         self.pagination.current_token = next_token.clone();
         self.pagination.current_page += 1;
 
-        self.fetch_page(next_token).await
+        self.start_fetch(next_token);
     }
 
-    pub async fn prev_page(&mut self) -> Result<()> {
+    pub fn prev_page(&mut self) {
+        if self.loading {
+            return;
+        }
         let Some(prev_token) = self.pagination.token_stack.pop() else {
-            return Ok(());
+            return;
         };
 
         self.pagination.current_token = prev_token.clone();
         self.pagination.current_page = self.pagination.current_page.saturating_sub(1).max(1);
 
-        self.fetch_page(prev_token).await
+        self.start_fetch(prev_token);
+    }
+
+    // =========================================================================
+    // Resource Actions
+    // =========================================================================
+
+    /// Execute an action on one or more resources in the background.
+    /// A notification is created per resource; results are applied by
+    /// [`App::handle_task_result`], which refreshes the view once.
+    pub fn start_actions(
+        &mut self,
+        service: &str,
+        sdk_method: &str,
+        resource_ids: &[&str],
+        params: Value,
+    ) {
+        let bulk = resource_ids.len() > 1;
+        let jobs: Vec<(Uuid, String)> = resource_ids
+            .iter()
+            .map(|id| {
+                let notification_id = self.create_operation_notification(sdk_method, service, id);
+                (notification_id, (*id).to_string())
+            })
+            .collect();
+
+        let service = service.to_string();
+        let sdk_method = sdk_method.to_string();
+        let client = self.client.clone();
+        let tx = self.task_tx.clone();
+
+        tokio::spawn(async move {
+            let results = futures::stream::iter(jobs)
+                .map(|(notification_id, resource_id)| {
+                    let (service, sdk_method, client, params) =
+                        (&service, &sdk_method, &client, &params);
+                    async move {
+                        let result =
+                            execute_action(service, sdk_method, client, &resource_id, params).await;
+                        (notification_id, result)
+                    }
+                })
+                .buffer_unordered(task::BULK_ACTION_CONCURRENCY)
+                .collect::<Vec<_>>()
+                .await;
+            task::send(&tx, TaskResult::Actions { results, bulk });
+        });
+    }
+
+    /// Update notifications from completed actions and refresh the view
+    fn apply_action_results(&mut self, results: Vec<(Uuid, Result<Value>)>, bulk: bool) {
+        let total = results.len();
+        let mut error_count = 0;
+        let mut last_error = None;
+
+        for (notification_id, result) in results {
+            match result {
+                Ok(response) => {
+                    // Extract operation URL for polling
+                    let operation_url = extract_operation_url(&response);
+                    self.mark_notification_in_progress(notification_id, operation_url.clone());
+
+                    // If no operation URL (immediate completion), mark success
+                    if operation_url.is_none() {
+                        self.mark_notification_success(notification_id);
+                    }
+                },
+                Err(e) => {
+                    let error_msg = crate::gcp::client::format_gcp_error(&e);
+                    self.mark_notification_error(notification_id, error_msg.clone());
+                    error_count += 1;
+                    last_error = Some(error_msg);
+                },
+            }
+        }
+
+        // Refresh first: starting a fetch clears the error message
+        if bulk || error_count < total {
+            self.refresh_current();
+        }
+
+        if bulk && error_count > 0 {
+            self.error_message = Some(format!(
+                "Bulk action: {} succeeded, {} failed of {}",
+                total - error_count,
+                error_count,
+                total
+            ));
+        } else if let Some(error_msg) = last_error {
+            self.error_message = Some(error_msg);
+        }
     }
 
     /// If the describe view is open, refresh its data from freshly fetched items
@@ -1057,7 +1271,7 @@ impl App {
         self.mode = Mode::Help;
     }
 
-    pub async fn enter_describe_mode(&mut self) {
+    pub fn enter_describe_mode(&mut self) {
         if self.filtered_indices.is_empty() {
             return;
         }
@@ -1248,17 +1462,14 @@ impl App {
         }
     }
 
-    /// Poll pending operations and update their status
-    pub async fn poll_pending_operations(&mut self) -> Result<()> {
+    /// Start polling pending operations that are due, in background tasks
+    pub fn poll_pending_operations(&mut self) {
         if !self.config.notifications.enabled || !self.notification_manager.auto_poll {
-            return Ok(());
+            return;
         }
 
         // Get operations that need polling
         let ops_to_poll = self.notification_manager.operations_to_poll();
-        if !ops_to_poll.is_empty() {
-            self.mark_dirty();
-        }
 
         for (notification_id, operation_url) in ops_to_poll {
             if !crate::gcp::client::is_trusted_operation_url(&operation_url) {
@@ -1270,34 +1481,28 @@ impl App {
                     notification_id,
                     "Untrusted operation URL, not polling".to_string(),
                 );
+                self.mark_dirty();
                 continue;
             }
 
-            match self.client.poll_operation(&operation_url).await {
-                Ok(status) => match status {
-                    OperationStatus::Done => {
-                        self.notification_manager.mark_success(notification_id);
-                        // Refresh current view to show updated state
-                        let _ = self.refresh_current().await;
-                    },
-                    OperationStatus::Failed(error) => {
-                        self.notification_manager.mark_error(notification_id, error);
-                    },
-                    OperationStatus::Running => {
-                        // Still running, will poll again
-                    },
-                    OperationStatus::Unknown(s) => {
-                        tracing::warn!("Unknown operation status: {}", s);
-                    },
-                },
-                Err(e) => {
-                    tracing::warn!("Failed to poll operation: {}", e);
-                    // Don't mark as error, might be transient
-                },
+            // A previous poll of this operation is still in flight
+            if !self.polling_in_flight.insert(notification_id) {
+                continue;
             }
-        }
 
-        Ok(())
+            let client = self.client.clone();
+            let tx = self.task_tx.clone();
+            tokio::spawn(async move {
+                let result = client.poll_operation(&operation_url).await;
+                task::send(
+                    &tx,
+                    TaskResult::OperationPolled {
+                        notification_id,
+                        result,
+                    },
+                );
+            });
+        }
     }
 
     /// Clear all notifications
@@ -1395,7 +1600,7 @@ impl App {
     // Resource Navigation
     // =========================================================================
 
-    pub async fn navigate_to_resource(&mut self, resource_key: &str) -> Result<()> {
+    pub fn navigate_to_resource(&mut self, resource_key: &str) -> Result<()> {
         if get_resource(resource_key).is_none() {
             self.error_message = Some(format!("Unknown resource: {}", resource_key));
             return Ok(());
@@ -1409,11 +1614,11 @@ impl App {
         self.selection.clear();
 
         self.reset_pagination();
-        self.refresh_current().await?;
+        self.refresh_current();
         Ok(())
     }
 
-    pub async fn navigate_to_sub_resource(&mut self, sub_resource_key: &str) -> Result<()> {
+    pub fn navigate_to_sub_resource(&mut self, sub_resource_key: &str) -> Result<()> {
         let Some(selected_item) = self.selected_item().cloned() else {
             return Ok(());
         };
@@ -1459,11 +1664,11 @@ impl App {
         self.selection.clear();
 
         self.reset_pagination();
-        self.refresh_current().await?;
+        self.refresh_current();
         Ok(())
     }
 
-    pub async fn navigate_back(&mut self) -> Result<()> {
+    pub fn navigate_back(&mut self) -> Result<()> {
         if let Some(parent) = self.nav.parent_context.take() {
             self.nav.parent_context = self.nav.navigation_stack.pop();
             self.current_resource_key = parent.resource_key;
@@ -1472,7 +1677,7 @@ impl App {
             self.selection.clear();
 
             self.reset_pagination();
-            self.refresh_current().await?;
+            self.refresh_current();
         }
         Ok(())
     }
@@ -1498,7 +1703,7 @@ impl App {
 
     /// Switch to another zone. Returns `false` (and shows an error) if the
     /// zone name is invalid, in which case nothing is changed.
-    pub async fn switch_zone(&mut self, zone: &str) -> Result<bool> {
+    pub fn switch_zone(&mut self, zone: &str) -> Result<bool> {
         if !crate::gcp::auth::validate_zone_name(zone) {
             self.error_message = Some(format!("Invalid zone: {}", zone));
             return Ok(false);
@@ -1516,13 +1721,13 @@ impl App {
 
     /// Switch to another project. Returns `false` (and shows an error) if the
     /// project ID is invalid, in which case nothing is changed.
-    pub async fn switch_project(&mut self, project: &str) -> Result<bool> {
+    pub fn switch_project(&mut self, project: &str) -> Result<bool> {
         if !crate::gcp::auth::validate_project_id(project) {
             self.error_message = Some(format!("Invalid project ID: {}", project));
             return Ok(false);
         }
 
-        self.client.switch_project(project).await?;
+        self.client.switch_project(project);
         self.project = project.to_string();
 
         if let Err(e) = self.config.set_project(project) {
@@ -1536,22 +1741,22 @@ impl App {
         Ok(true)
     }
 
-    pub async fn select_project(&mut self) -> Result<()> {
+    pub fn select_project(&mut self) -> Result<()> {
         if let Some(project) = self.projects_selector.current().cloned() {
-            if self.switch_project(&project).await? {
+            if self.switch_project(&project)? {
                 self.reset_pagination();
-                self.refresh_current().await?;
+                self.refresh_current();
             }
         }
         self.exit_mode();
         Ok(())
     }
 
-    pub async fn select_zone(&mut self) -> Result<()> {
+    pub fn select_zone(&mut self) -> Result<()> {
         if let Some(zone) = self.zones_selector.current().cloned() {
-            if self.switch_zone(&zone).await? {
+            if self.switch_zone(&zone)? {
                 self.reset_pagination();
-                self.refresh_current().await?;
+                self.refresh_current();
             }
         }
         self.exit_mode();
@@ -1562,7 +1767,7 @@ impl App {
     // Command Execution
     // =========================================================================
 
-    pub async fn execute_command(&mut self) -> Result<bool> {
+    pub fn execute_command(&mut self) -> Result<bool> {
         let command_text = if self.command.text.is_empty() {
             self.command.preview.clone().unwrap_or_default()
         } else if let Some(preview) = &self.command.preview {
@@ -1586,7 +1791,7 @@ impl App {
         match cmd {
             "q" | "quit" => return Ok(true),
             "back" => {
-                self.navigate_back().await?;
+                self.navigate_back()?;
             },
             "projects" => {
                 self.enter_projects_mode();
@@ -1602,15 +1807,15 @@ impl App {
                 }
             },
             "zone" if parts.len() > 1 => {
-                if self.switch_zone(parts[1]).await? {
+                if self.switch_zone(parts[1])? {
                     self.reset_pagination();
-                    self.refresh_current().await?;
+                    self.refresh_current();
                 }
             },
             "project" if parts.len() > 1 => {
-                if self.switch_project(parts[1]).await? {
+                if self.switch_project(parts[1])? {
                     self.reset_pagination();
-                    self.refresh_current().await?;
+                    self.refresh_current();
                 }
             },
             "theme" => {
@@ -1658,12 +1863,12 @@ impl App {
                             .iter()
                             .any(|s| s.resource_key == resolved_cmd);
                         if is_sub && self.selected_item().is_some() {
-                            self.navigate_to_sub_resource(&resolved_cmd).await?;
+                            self.navigate_to_sub_resource(&resolved_cmd)?;
                         } else {
-                            self.navigate_to_resource(&resolved_cmd).await?;
+                            self.navigate_to_resource(&resolved_cmd)?;
                         }
                     } else {
-                        self.navigate_to_resource(&resolved_cmd).await?;
+                        self.navigate_to_resource(&resolved_cmd)?;
                     }
                 } else {
                     self.error_message = Some(format!("Unknown command: {}", cmd));
@@ -2345,5 +2550,186 @@ mod tests {
         assert_eq!(Mode::Normal, Mode::Normal);
         assert_ne!(Mode::Normal, Mode::Command);
         assert_eq!(Mode::Describe, Mode::Describe);
+    }
+}
+
+#[cfg(test)]
+mod task_tests {
+    use super::*;
+    use crate::notification::NotificationStatus;
+
+    /// App on a resource without metrics, so applying a page spawns nothing
+    fn test_app() -> App {
+        let config: Config = serde_json::from_str("{}").unwrap();
+        let mut app = App::from_initialized(
+            GcpClient::for_tests("test-project", "us-central1-a"),
+            "test-project".to_string(),
+            "us-central1-a".to_string(),
+            vec![],
+            vec![],
+            vec![],
+            None,
+            config,
+            false,
+        );
+        app.current_resource_key = "compute-disks".to_string();
+        app
+    }
+
+    fn page(names: &[&str], next_token: Option<&str>) -> Result<PaginatedResult> {
+        Ok(PaginatedResult {
+            items: names
+                .iter()
+                .map(|n| serde_json::json!({ "name": n, "id": n }))
+                .collect(),
+            next_token: next_token.map(String::from),
+        })
+    }
+
+    fn notification_status(app: &App, id: Uuid) -> NotificationStatus {
+        app.notification_manager
+            .notifications
+            .iter()
+            .find(|n| n.id == id)
+            .map(|n| n.status.clone())
+            .expect("notification exists")
+    }
+
+    #[tokio::test]
+    async fn test_page_result_applied_for_current_fetch() {
+        let mut app = test_app();
+        app.refresh_current();
+        assert!(app.loading);
+
+        let generation = app.fetch_generation;
+        app.handle_task_result(TaskResult::Page {
+            generation,
+            result: page(&["a", "b"], Some("tok")),
+        });
+
+        assert!(!app.loading);
+        assert_eq!(app.items.len(), 2);
+        assert_eq!(app.filtered_indices.len(), 2);
+        assert!(app.pagination.has_more);
+        assert_eq!(app.pagination.next_token.as_deref(), Some("tok"));
+    }
+
+    #[tokio::test]
+    async fn test_stale_page_result_is_dropped() {
+        let mut app = test_app();
+        app.refresh_current();
+        let stale = app.fetch_generation;
+        app.refresh_current(); // supersedes the first fetch
+
+        app.handle_task_result(TaskResult::Page {
+            generation: stale,
+            result: page(&["stale"], None),
+        });
+        assert!(app.loading, "stale result must not end the current fetch");
+        assert!(app.items.is_empty());
+
+        let current = app.fetch_generation;
+        app.handle_task_result(TaskResult::Page {
+            generation: current,
+            result: page(&["fresh"], None),
+        });
+        assert!(!app.loading);
+        assert_eq!(app.items[0]["name"], "fresh");
+    }
+
+    #[tokio::test]
+    async fn test_page_error_clears_items() {
+        let mut app = test_app();
+        app.items = vec![serde_json::json!({"name": "old"})];
+        app.refresh_current();
+
+        let generation = app.fetch_generation;
+        app.handle_task_result(TaskResult::Page {
+            generation,
+            result: Err(anyhow::anyhow!("boom")),
+        });
+
+        assert!(!app.loading);
+        assert!(app.items.is_empty());
+        assert!(app.error_message.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_page_navigation_ignored_while_loading() {
+        let mut app = test_app();
+        app.pagination = PaginationState::first_page(Some("tok".to_string()));
+        app.refresh_current();
+
+        app.next_page();
+        assert_eq!(app.pagination.current_page, 1);
+        assert!(app.pagination.token_stack.is_empty());
+
+        let generation = app.fetch_generation;
+        app.handle_task_result(TaskResult::Page {
+            generation,
+            result: page(&["a"], Some("tok")),
+        });
+        app.next_page();
+        assert_eq!(app.pagination.current_page, 2);
+        assert_eq!(app.pagination.current_token.as_deref(), Some("tok"));
+    }
+
+    #[tokio::test]
+    async fn test_action_results_update_notifications() {
+        let mut app = test_app();
+        let ok_id = app.create_operation_notification("stop_instance", "compute", "vm-1");
+        let op_id = app.create_operation_notification("stop_instance", "compute", "vm-2");
+        let err_id = app.create_operation_notification("stop_instance", "compute", "vm-3");
+
+        app.handle_task_result(TaskResult::Actions {
+            results: vec![
+                (ok_id, Ok(serde_json::json!({}))),
+                (
+                    op_id,
+                    Ok(serde_json::json!({
+                        "selfLink": "https://compute.googleapis.com/compute/v1/projects/p/zones/z/operations/op"
+                    })),
+                ),
+                (err_id, Err(anyhow::anyhow!("denied"))),
+            ],
+            bulk: true,
+        });
+
+        assert_eq!(
+            notification_status(&app, ok_id),
+            NotificationStatus::Success
+        );
+        assert_eq!(
+            notification_status(&app, op_id),
+            NotificationStatus::InProgress
+        );
+        assert!(matches!(
+            notification_status(&app, err_id),
+            NotificationStatus::Error(_)
+        ));
+        assert_eq!(
+            app.error_message.as_deref(),
+            Some("Bulk action: 2 succeeded, 1 failed of 3")
+        );
+        // The view is refreshed once after the actions
+        assert!(app.loading);
+    }
+
+    #[tokio::test]
+    async fn test_failed_single_action_does_not_refresh() {
+        let mut app = test_app();
+        let id = app.create_operation_notification("delete_disk", "compute", "disk-1");
+
+        app.handle_task_result(TaskResult::Actions {
+            results: vec![(id, Err(anyhow::anyhow!("denied")))],
+            bulk: false,
+        });
+
+        assert!(matches!(
+            notification_status(&app, id),
+            NotificationStatus::Error(_)
+        ));
+        assert!(app.error_message.is_some());
+        assert!(!app.loading);
     }
 }

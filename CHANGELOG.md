@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- UI no longer freezes during GCP API calls: fetches, actions and operation polling run in background tasks, with a "Loading" indicator while a page loads
+- VM monitoring metrics load after the instance list is shown (also on startup)
+- Bulk actions run concurrently (up to 8 at a time) and refresh the view once
+
+### Fixed
+- Bulk action summary ("N succeeded, M failed") was immediately cleared by the refresh
+- Key release events were handled as key presses on Windows
+
 ## [0.5.1] - 2026-10-10
 
 ### Fixed
