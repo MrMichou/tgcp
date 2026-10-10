@@ -1,4 +1,4 @@
-FROM rust:1.88-slim AS builder
+FROM rust:1.98-slim AS builder
 
 WORKDIR /app
 
@@ -16,9 +16,12 @@ RUN rm -rf src
 COPY . .
 ARG TGCP_VERSION=dev
 ENV TGCP_VERSION=${TGCP_VERSION}
-RUN cargo build --release --target x86_64-unknown-linux-musl
+# Touch sources so cargo rebuilds over the cached placeholder binary
+RUN touch src/main.rs && cargo build --release --target x86_64-unknown-linux-musl
 RUN cp target/x86_64-unknown-linux-musl/release/tgcp /tgcp
 
 FROM scratch
+# CA bundle for TLS verification (rustls uses the system trust store)
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /tgcp /tgcp
 ENTRYPOINT ["/tgcp"]
